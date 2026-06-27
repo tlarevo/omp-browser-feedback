@@ -1,5 +1,5 @@
 {
-	"name": "omp-dom-feedback",
+	"name": "omp-browser-feedback",
 	"private": true,
 	"type": "module",
 	"packageManager": "bun@1.3.14",
