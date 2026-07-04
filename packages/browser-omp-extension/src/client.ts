@@ -32,6 +32,12 @@ export interface BrowserBrokerSessionInput {
 	processId: number;
 }
 
+export interface BrowserPairingWindow {
+	pairingId: string;
+	code: string;
+	expiresAt: string;
+}
+
 export class BrowserBrokerClient {
 	readonly #baseUrl: string;
 	readonly #authToken: string;
@@ -176,6 +182,35 @@ export class BrowserBrokerClient {
 			sessions?: BrowserSessionRegistration[];
 		};
 		return body.sessions ?? [];
+	}
+
+	async openPairingWindow(sessionId: string): Promise<BrowserPairingWindow> {
+		const response = await this.#fetch(`${this.#baseUrl}/api/pair/open`, {
+			method: "POST",
+			headers: {
+				Authorization: `Bearer ${this.#authToken}`,
+				"Content-Type": "application/json",
+			},
+			body: JSON.stringify({ sessionId }),
+		});
+		if (!response.ok) {
+			throw new Error(
+				`Browser pairing open failed with HTTP ${response.status}`,
+			);
+		}
+		return (await response.json()) as BrowserPairingWindow;
+	}
+
+	async revokeAllBrowserCapabilities(): Promise<void> {
+		const response = await this.#fetch(`${this.#baseUrl}/api/pair/reset`, {
+			method: "POST",
+			headers: { Authorization: `Bearer ${this.#authToken}` },
+		});
+		if (!response.ok) {
+			throw new Error(
+				`Browser pairing reset failed with HTTP ${response.status}`,
+			);
+		}
 	}
 
 	subscribeFeedback(

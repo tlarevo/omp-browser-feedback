@@ -1,13 +1,49 @@
 import { describe, expect, test } from "bun:test";
 import { BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
 import { parseHTML } from "linkedom";
-import { renderPopup, renderSessionLabel } from "../src/popup/main";
+import {
+	ensureBrowserInstallId,
+	renderPopup,
+	renderSessionLabel,
+} from "../src/popup/main";
 
 function documentWithRoot() {
 	const { document } = parseHTML("<main id='app'></main>");
 	const root = document.getElementById("app");
 	if (!root) throw new Error("Missing popup root");
 	return { document, root };
+}
+
+function installPopupGlobals(initial: Record<string, unknown> = {}) {
+	const stored = { ...initial };
+
+	Reflect.set(globalThis, "document", {
+		addEventListener() {},
+	});
+	Reflect.set(globalThis, "chrome", {
+		storage: {
+			local: {
+				get(
+					keys: string[],
+					callback: (items: Record<string, unknown>) => void,
+				) {
+					callback(
+						Object.fromEntries(
+							keys
+								.map((key) => [key, stored[key]])
+								.filter((entry) => entry[1] !== undefined),
+						),
+					);
+				},
+				set(update: Record<string, unknown>, callback?: () => void) {
+					Object.assign(stored, update);
+					callback?.();
+				},
+			},
+		},
+	});
+
+	return stored;
 }
 
 describe("renderSessionLabel", () => {
@@ -25,22 +61,22 @@ describe("renderSessionLabel", () => {
 });
 
 describe("renderPopup", () => {
-	test("renders a missing-auth state with a token save action", () => {
+	test("renders an unpaired state with a pairing code action", () => {
 		const { root } = documentWithRoot();
-		let saved = "";
+		let savedCode = "";
 		renderPopup(
 			root,
-			{ kind: "missing-auth", baseUrl: "http://127.0.0.1:4317" },
-			{ onSaveToken: (token) => (saved = token) },
+			{ kind: "unpaired", baseUrl: "http://127.0.0.1:4317" },
+			{ onPairWithCode: (code) => (savedCode = code) },
 		);
 
 		const input = root.querySelector("input");
-		expect(root.textContent).toContain("Broker found");
-		expect(input).toBeTruthy();
-		if (input) input.value = "secret";
+		expect(root.textContent).toContain("Enter pairing code");
+		expect(input?.getAttribute("placeholder")).toContain("Pairing code");
+		if (input) input.value = "A7K2Q9";
 		root.querySelector("button")?.click();
 
-		expect(saved).toBe("secret");
+		expect(savedCode).toBe("A7K2Q9");
 	});
 
 	test("renders active sessions and starts picker for the selected session", () => {
@@ -84,5 +120,15 @@ describe("renderPopup", () => {
 		expect(root.textContent).toContain("Two · /repo/two · feature · idle");
 		root.querySelector("button")?.click();
 		expect(picked).toBe("ses_2");
+	});
+});
+
+describe("ensureBrowserInstallId", () => {
+	test("creates and persists a browser install id when missing", async () => {
+		const stored = installPopupGlobals();
+
+		const installId = await ensureBrowserInstallId();
+		expect(installId).toMatch(/^browser_/);
+		expect(stored.browserInstallId).toBe(installId);
 	});
 });

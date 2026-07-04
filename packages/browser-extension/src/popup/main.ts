@@ -14,9 +14,34 @@ export function renderSessionLabel(session: PopupSession): string {
 	return `${session.displayName} · ${session.cwd}${branch} · ${session.status}`;
 }
 
+function readOptionalString(value: unknown, key: string): string | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const record = value as Record<string, unknown>;
+	const candidate = record[key];
+	return typeof candidate === "string" ? candidate : undefined;
+}
+
+export async function ensureBrowserInstallId(): Promise<string> {
+	return new Promise((resolve) => {
+		chrome.storage.local.get(["browserInstallId"], (items) => {
+			const existingInstallId = readOptionalString(items, "browserInstallId");
+			if (existingInstallId) {
+				resolve(existingInstallId);
+				return;
+			}
+
+			const nextInstallId = `browser_${crypto.randomUUID()}`;
+			chrome.storage.local.set({ browserInstallId: nextInstallId }, () => {
+				resolve(nextInstallId);
+			});
+		});
+	});
+}
+
 export type PopupState =
 	| { kind: "no-broker"; attemptedPorts: number[] }
-	| { kind: "missing-auth"; baseUrl: string }
+	| { kind: "unpaired"; baseUrl: string }
+	| { kind: "pairing-error"; baseUrl: string; message: string }
 	| { kind: "no-sessions"; baseUrl: string }
 	| {
 			kind: "ready";
@@ -27,9 +52,9 @@ export type PopupState =
 	| { kind: "error"; message: string };
 
 export interface PopupActionHandlers {
+	onPairWithCode?: (code: string) => void;
 	onSelectSession?: (sessionId: string) => void;
 	onStartPicker?: (sessionId: string, note?: string) => void;
-	onSaveToken?: (token: string) => void;
 }
 
 function clear(element: HTMLElement): void {
@@ -58,6 +83,20 @@ function appendStatus(
 	root.append(paragraph);
 }
 
+function appendPairingForm(
+	document: Document,
+	root: HTMLElement,
+	onPairWithCode?: (code: string) => void,
+): void {
+	const input = document.createElement("input");
+	input.autocomplete = "off";
+	input.placeholder = "Pairing code";
+	root.append(
+		input,
+		createButton(document, "Pair", () => onPairWithCode?.(input.value)),
+	);
+}
+
 export function renderPopup(
 	root: HTMLElement,
 	state: PopupState,
@@ -75,20 +114,24 @@ export function renderPopup(
 		return;
 	}
 
-	if (state.kind === "missing-auth") {
+	if (state.kind === "unpaired") {
 		appendStatus(
 			document,
 			root,
-			`Broker found at ${state.baseUrl}. Paste the local auth token to continue.`,
+			`Broker found at ${state.baseUrl}. Enter pairing code from /bf pair.`,
 		);
-		const input = document.createElement("input");
-		input.type = "password";
-		input.autocomplete = "off";
-		input.placeholder = "Auth token";
-		const button = createButton(document, "Save", () =>
-			handlers.onSaveToken?.(input.value),
+		appendPairingForm(document, root, handlers.onPairWithCode);
+		return;
+	}
+
+	if (state.kind === "pairing-error") {
+		appendStatus(
+			document,
+			root,
+			`Broker found at ${state.baseUrl}. Enter pairing code from /bf pair.`,
 		);
-		root.append(input, button);
+		appendStatus(document, root, state.message);
+		appendPairingForm(document, root, handlers.onPairWithCode);
 		return;
 	}
 

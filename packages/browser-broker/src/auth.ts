@@ -19,3 +19,13 @@ export function isAuthorizedRequest(
 ): boolean {
 	return bearerTokenFromRequest(request) === authToken;
 }
+
+export function isAuthorizedBrowserRequest(
+	request: Request,
+	validateBrowserCapability: (capabilityToken: string) => boolean,
+): boolean {
+	const capabilityToken = bearerTokenFromRequest(request);
+	return (
+		capabilityToken !== undefined && validateBrowserCapability(capabilityToken)
+	);
+}

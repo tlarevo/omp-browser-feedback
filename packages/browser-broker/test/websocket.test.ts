@@ -228,4 +228,51 @@ describe("browser broker websocket routing", () => {
 			event: { eventId: "evt_1", channelId: "ses_1" },
 		});
 	});
+
+	test("marks a session disconnected when the OMP socket closes", async () => {
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
+		servers.push(server);
+
+		await fetch(`${server.baseUrl}/api/sessions/register`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify(registration()),
+		});
+
+		await new Promise<void>((resolve, reject) => {
+			const ws = new WebSocket(
+				`${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`,
+			);
+			const timer = setTimeout(
+				() => reject(new Error("Timed out waiting for websocket open/close")),
+				2_000,
+			);
+			ws.onopen = () => ws.close();
+			ws.onclose = () => {
+				clearTimeout(timer);
+				resolve();
+			};
+			ws.onerror = () => {
+				clearTimeout(timer);
+				reject(new Error("Broker websocket errored"));
+			};
+		});
+
+		const body = (await (
+			await fetch(`${server.baseUrl}/api/sessions`, { headers })
+		).json()) as {
+			sessions: Array<{ sessionId: string; status: string }>;
+		};
+
+		expect(body.sessions).toEqual([
+			expect.objectContaining({
+				sessionId: "ses_1",
+				status: "disconnected",
+			}),
+		]);
+	});
 });

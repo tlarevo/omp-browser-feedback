@@ -8,8 +8,10 @@ import {
 	validateSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
 import type { Server } from "bun";
-import { isAuthorizedRequest } from "./auth";
+import { isAuthorizedBrowserRequest, isAuthorizedRequest } from "./auth";
+import { defaultPairingRegistryPath } from "./discovery";
 import { InMemoryFeedbackStore } from "./feedback-store";
+import { createPairingStore } from "./pairing-store";
 import { BrowserScreenshotStore } from "./screenshots";
 import { BrowserSessionRegistry } from "./session-registry";
 import {
@@ -22,6 +24,7 @@ export interface BrowserBrokerServerOptions {
 	port: number;
 	authToken: string;
 	maxEventsPerChannel?: number;
+	pairingRegistryPath?: string;
 	screenshotRootDir?: string;
 	maxScreenshotBytes?: number;
 }
@@ -117,6 +120,9 @@ export async function createBrowserBrokerServer(
 			options.maxScreenshotBytes ?? BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes,
 	});
 	const websockets = new BrowserWebSocketRouter();
+	const pairingStore = createPairingStore({
+		registryPath: options.pairingRegistryPath ?? defaultPairingRegistryPath(),
+	});
 	const port = await resolvePort(options.host, options.port);
 
 	let server: Server<BrowserBrokerSocketData>;
@@ -172,7 +178,173 @@ export async function createBrowserBrokerServer(
 				});
 			}
 
-			if (!isAuthorizedRequest(request, options.authToken)) {
+			if (request.method === "POST" && url.pathname === "/api/pair") {
+				const payload = (await readJson(request)) as Record<string, unknown>;
+				if (
+					typeof payload.browserInstallId !== "string" ||
+					typeof payload.code !== "string"
+				) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "invalid_pairing_request",
+							message: "browserInstallId and code are required",
+						},
+						{ status: 400 },
+					);
+				}
+				try {
+					const result = await pairingStore.redeemPairingCode({
+						browserInstallId: payload.browserInstallId,
+						code: payload.code,
+						...(typeof payload.label === "string"
+							? { label: payload.label }
+							: {}),
+					});
+					return jsonResponse({ capabilityToken: result.capabilityToken });
+				} catch (error) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "invalid_pairing_code",
+							message:
+								error instanceof Error ? error.message : "Invalid pairing code",
+						},
+						{ status: 400 },
+					);
+				}
+			}
+
+			const rootAuthorized = isAuthorizedRequest(request, options.authToken);
+			const browserAuthorized = isAuthorizedBrowserRequest(
+				request,
+				pairingStore.validateBrowserCapability,
+			);
+
+			if (request.method === "POST" && url.pathname === "/api/pair/open") {
+				if (!rootAuthorized) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "unauthorized",
+							message: "Missing or invalid bearer token",
+						},
+						{ status: 401 },
+					);
+				}
+				const payload = (await readJson(request)) as Record<string, unknown>;
+				if (
+					typeof payload.sessionId !== "string" ||
+					payload.sessionId.trim().length === 0
+				) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "invalid_session",
+							message: "sessionId is required",
+						},
+						{ status: 400 },
+					);
+				}
+				const sessionId = payload.sessionId.trim();
+				if (!registry.getBySessionId(sessionId)) {
+					return jsonResponse(
+						{ ok: false, code: "unknown_session", message: "Unknown session" },
+						{ status: 404 },
+					);
+				}
+				return jsonResponse(await pairingStore.issuePairingCode(sessionId));
+			}
+
+			if (request.method === "POST" && url.pathname === "/api/pair/reset") {
+				if (!rootAuthorized) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "unauthorized",
+							message: "Missing or invalid bearer token",
+						},
+						{ status: 401 },
+					);
+				}
+				await pairingStore.revokeAllBrowserCapabilities();
+				return jsonResponse({ ok: true });
+			}
+
+			if (request.method === "GET" && url.pathname === "/api/sessions") {
+				if (!rootAuthorized && !browserAuthorized) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "unauthorized",
+							message: "Missing or invalid bearer token",
+						},
+						{ status: 401 },
+					);
+				}
+				return jsonResponse({ sessions: registry.list() });
+			}
+
+			const sessionFeedbackMatch = url.pathname.match(
+				/^\/api\/sessions\/([^/]+)\/feedback(?:\/latest)?$/,
+			);
+			if (request.method === "GET" && sessionFeedbackMatch) {
+				if (!rootAuthorized) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "unauthorized",
+							message: "Missing or invalid bearer token",
+						},
+						{ status: 401 },
+					);
+				}
+				const session = registry.getBySessionId(
+					decodeURIComponent(sessionFeedbackMatch[1] ?? ""),
+				);
+				if (!session)
+					return jsonResponse(
+						{ ok: false, code: "unknown_session", message: "Unknown session" },
+						{ status: 404 },
+					);
+				if (url.pathname.endsWith("/latest"))
+					return jsonResponse({
+						feedback: feedback.latest(session.channelId) ?? null,
+					});
+				return jsonResponse({ feedback: feedback.list(session.channelId) });
+			}
+
+			if (request.method === "POST" && url.pathname === "/api/feedback") {
+				if (!rootAuthorized && !browserAuthorized) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "unauthorized",
+							message: "Missing or invalid bearer token",
+						},
+						{ status: 401 },
+					);
+				}
+				const result = validateFeedbackEvent(
+					await readFeedbackRequest(request, screenshots),
+				);
+				if (!result.ok)
+					return jsonResponse(
+						{ ok: false, code: "invalid_feedback", message: result.error },
+						{ status: 400 },
+					);
+				feedback.add({
+					channelId: result.value.channelId,
+					eventId: result.value.eventId,
+					createdAt: result.value.createdAt,
+					payload: result.value,
+				});
+				const session = registry.getByChannelId(result.value.channelId);
+				if (session) websockets.sendFeedback(session.sessionId, result.value);
+				return jsonResponse({ ok: true, eventId: result.value.eventId });
+			}
+
+			if (!rootAuthorized) {
 				return jsonResponse(
 					{
 						ok: false,
@@ -181,10 +353,6 @@ export async function createBrowserBrokerServer(
 					},
 					{ status: 401 },
 				);
-			}
-
-			if (request.method === "GET" && url.pathname === "/api/sessions") {
-				return jsonResponse({ sessions: registry.list() });
 			}
 
 			if (
@@ -253,25 +421,6 @@ export async function createBrowserBrokerServer(
 				});
 			}
 
-			const sessionFeedbackMatch = url.pathname.match(
-				/^\/api\/sessions\/([^/]+)\/feedback(?:\/latest)?$/,
-			);
-			if (request.method === "GET" && sessionFeedbackMatch) {
-				const session = registry.getBySessionId(
-					decodeURIComponent(sessionFeedbackMatch[1] ?? ""),
-				);
-				if (!session)
-					return jsonResponse(
-						{ ok: false, code: "unknown_session", message: "Unknown session" },
-						{ status: 404 },
-					);
-				if (url.pathname.endsWith("/latest"))
-					return jsonResponse({
-						feedback: feedback.latest(session.channelId) ?? null,
-					});
-				return jsonResponse({ feedback: feedback.list(session.channelId) });
-			}
-
 			if (request.method === "DELETE" && sessionFeedbackMatch) {
 				const session = registry.getBySessionId(
 					decodeURIComponent(sessionFeedbackMatch[1] ?? ""),
@@ -287,26 +436,6 @@ export async function createBrowserBrokerServer(
 				});
 			}
 
-			if (request.method === "POST" && url.pathname === "/api/feedback") {
-				const result = validateFeedbackEvent(
-					await readFeedbackRequest(request, screenshots),
-				);
-				if (!result.ok)
-					return jsonResponse(
-						{ ok: false, code: "invalid_feedback", message: result.error },
-						{ status: 400 },
-					);
-				feedback.add({
-					channelId: result.value.channelId,
-					eventId: result.value.eventId,
-					createdAt: result.value.createdAt,
-					payload: result.value,
-				});
-				const session = registry.getByChannelId(result.value.channelId);
-				if (session) websockets.sendFeedback(session.sessionId, result.value);
-				return jsonResponse({ ok: true, eventId: result.value.eventId });
-			}
-
 			return jsonResponse(
 				{ ok: false, code: "not_found", message: "Not found" },
 				{ status: 404 },
@@ -315,7 +444,10 @@ export async function createBrowserBrokerServer(
 		websocket: {
 			open(socket) {
 				websockets.add(socket);
-				const session = registry.getBySessionId(socket.data.sessionId);
+				const session = registry.update(socket.data.sessionId, {
+					status: "active",
+					lastActiveAt: new Date().toISOString(),
+				});
 				if (!session) return;
 				for (const event of feedback.list(session.channelId)) {
 					if (event.payload)
@@ -327,6 +459,7 @@ export async function createBrowserBrokerServer(
 			},
 			close(socket) {
 				websockets.remove(socket);
+				registry.markDisconnected(socket.data.sessionId);
 			},
 			message() {},
 		},

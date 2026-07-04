@@ -6,6 +6,7 @@ import {
 import {
 	discoverBroker,
 	listSessions,
+	redeemPairingCode,
 	submitFeedback,
 } from "../src/background";
 
@@ -40,12 +41,41 @@ describe("extension broker discovery", () => {
 	});
 });
 
+describe("extension pairing", () => {
+	test("redeems a pairing code for a browser capability token", async () => {
+		let capturedUrl = "";
+		let capturedInit: RequestInit | undefined;
+
+		const result = await redeemPairingCode({
+			baseUrl: "http://127.0.0.1:4317",
+			browserInstallId: "browser_install_1",
+			code: "A7K2Q9",
+			fetch: async (url, init) => {
+				capturedUrl = String(url);
+				capturedInit = init;
+				return Response.json({ capabilityToken: "bcap_123" });
+			},
+		});
+
+		expect(result).toEqual({ capabilityToken: "bcap_123" });
+		expect(capturedUrl).toBe("http://127.0.0.1:4317/api/pair");
+		expect(capturedInit?.method).toBe("POST");
+		expect(capturedInit?.headers).toEqual({
+			"Content-Type": "application/json",
+		});
+		expect(JSON.parse(String(capturedInit?.body))).toEqual({
+			browserInstallId: "browser_install_1",
+			code: "A7K2Q9",
+		});
+	});
+});
+
 describe("extension feedback submission", () => {
 	test("submits event JSON and screenshot as multipart form data", async () => {
 		let captured: RequestInit | undefined;
 		await submitFeedback({
 			baseUrl: "http://127.0.0.1:4317",
-			authToken: "secret",
+			capabilityToken: "secret",
 			event: {
 				protocolVersion: BROWSER_PROTOCOL_VERSION,
 				eventId: "evt_1",
@@ -82,11 +112,11 @@ describe("extension feedback submission", () => {
 });
 
 describe("extension session listing", () => {
-	test("loads sessions with bearer auth", async () => {
+	test("loads sessions with browser capability auth", async () => {
 		let captured: RequestInit | undefined;
 		const sessions = await listSessions({
 			baseUrl: "http://127.0.0.1:4317",
-			authToken: "secret",
+			capabilityToken: "secret",
 			fetch: async (_url, init) => {
 				captured = init;
 				return Response.json({

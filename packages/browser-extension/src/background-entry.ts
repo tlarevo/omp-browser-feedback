@@ -1,8 +1,14 @@
 import type {
 	BrowserFeedbackEvent,
+	BrowserSessionRegistration,
 	DomSelectionFeedback,
 } from "@oh-my-pi/browser-protocol";
-import { discoverBroker, listSessions, submitFeedback } from "./background";
+import {
+	discoverBroker,
+	listSessions,
+	probeBroker,
+	submitFeedback,
+} from "./background";
 import { captureAndCrop } from "./screenshot";
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -10,10 +16,42 @@ const DEFAULT_PORTS: number[] = Array.from({ length: 21 }, (_, i) => 4317 + i);
 
 type MessageResponse<T> = { ok: true; data: T } | { ok: false; error: string };
 
+async function setStorage(update: Record<string, unknown>): Promise<void> {
+	return new Promise((resolve) => {
+		chrome.storage.local.set(update, resolve);
+	});
+}
+
+function portFromBaseUrl(baseUrl: string): number | undefined {
+	try {
+		const { port, protocol } = new URL(baseUrl);
+		if (port.length > 0) {
+			const parsedPort = Number(port);
+			return Number.isInteger(parsedPort) ? parsedPort : undefined;
+		}
+		return protocol === "https:" ? 443 : 80;
+	} catch {
+		return undefined;
+	}
+}
+
 async function handleDiscoverBroker(): Promise<
 	MessageResponse<{ baseUrl: string; port: number } | null>
 > {
 	try {
+		const stored = await chrome.storage.local.get(["brokerBaseUrl"]);
+		const storedBaseUrl =
+			typeof stored.brokerBaseUrl === "string"
+				? stored.brokerBaseUrl
+				: undefined;
+		if (storedBaseUrl) {
+			const health = await probeBroker(storedBaseUrl);
+			const port = portFromBaseUrl(storedBaseUrl);
+			if (health && port !== undefined) {
+				return { ok: true, data: { baseUrl: storedBaseUrl, port } };
+			}
+		}
+
 		const broker = await discoverBroker({
 			host: DEFAULT_HOST,
 			ports: DEFAULT_PORTS,
@@ -29,14 +67,10 @@ async function handleDiscoverBroker(): Promise<
 
 async function handleListSessions(
 	baseUrl: string,
-	authToken: string,
-): Promise<
-	MessageResponse<
-		ReturnType<typeof listSessions> extends Promise<infer T> ? T : never
-	>
-> {
+	capabilityToken: string,
+): Promise<MessageResponse<BrowserSessionRegistration[]>> {
 	try {
-		const sessions = await listSessions({ baseUrl, authToken });
+		const sessions = await listSessions({ baseUrl, capabilityToken });
 		return { ok: true, data: sessions };
 	} catch (error) {
 		return { ok: false, error: String(error) };
@@ -62,12 +96,18 @@ async function handleElementSelected(
 	try {
 		const stored = await chrome.storage.local.get([
 			"brokerBaseUrl",
-			"brokerAuthToken",
+			"browserCapabilityToken",
 		]);
-		const baseUrl = stored.brokerBaseUrl as string | undefined;
-		const authToken = stored.brokerAuthToken as string | undefined;
-		if (!baseUrl || !authToken) {
-			return { ok: false, error: "No active broker session stored" };
+		const baseUrl =
+			typeof stored.brokerBaseUrl === "string"
+				? stored.brokerBaseUrl
+				: undefined;
+		const capabilityToken =
+			typeof stored.browserCapabilityToken === "string"
+				? stored.browserCapabilityToken
+				: undefined;
+		if (!baseUrl || !capabilityToken) {
+			return { ok: false, error: "Browser is not paired" };
 		}
 
 		let eventToSubmit: BrowserFeedbackEvent = event;
@@ -98,7 +138,7 @@ async function handleElementSelected(
 
 		await submitFeedback({
 			baseUrl,
-			authToken,
+			capabilityToken,
 			event: eventToSubmit,
 			screenshot,
 		});
@@ -120,59 +160,67 @@ chrome.runtime.onMessage.addListener(
 		}
 
 		if (message.type === "omp:list-sessions") {
-			const { baseUrl, authToken } = message as {
-				baseUrl: string;
-				authToken: string;
-				type: string;
-			};
-			handleListSessions(baseUrl, authToken).then(sendResponse);
+			const baseUrl =
+				typeof message.baseUrl === "string" ? message.baseUrl : undefined;
+			const capabilityToken =
+				typeof message.capabilityToken === "string"
+					? message.capabilityToken
+					: undefined;
+			if (!baseUrl || !capabilityToken) {
+				sendResponse({
+					ok: false,
+					error: "Browser capability token is required",
+				});
+				return false;
+			}
+			handleListSessions(baseUrl, capabilityToken).then(sendResponse);
 			return true;
 		}
 
 		if (message.type === "omp:start-picker") {
-			const { channelId, note, baseUrl, authToken } = message as {
-				channelId: string;
-				note?: string;
-				baseUrl: string;
-				authToken: string;
-				type: string;
-			};
+			const channelId =
+				typeof message.channelId === "string" ? message.channelId : undefined;
+			const baseUrl =
+				typeof message.baseUrl === "string" ? message.baseUrl : undefined;
+			const note = typeof message.note === "string" ? message.note : undefined;
+			if (!channelId || !baseUrl) {
+				sendResponse({ ok: false, error: "Missing picker context" });
+				return false;
+			}
 			const tabId = sender.tab?.id ?? -1;
 			if (tabId === -1) {
-				// Message from popup — get the active tab instead
 				chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
 					const activeTabId = tabs[0]?.id;
 					if (!activeTabId) {
 						sendResponse({ ok: false, error: "No active tab" });
 						return;
 					}
-					// Store credentials for when element is selected
-					chrome.storage.local.set(
-						{ brokerBaseUrl: baseUrl, brokerAuthToken: authToken },
-						() => {
-							handleStartPicker(channelId, note, activeTabId)
-								.then(() => sendResponse({ ok: true, data: undefined }))
-								.catch((err) =>
-									sendResponse({ ok: false, error: String(err) }),
-								);
-						},
-					);
+					setStorage({ brokerBaseUrl: baseUrl })
+						.then(() => handleStartPicker(channelId, note, activeTabId))
+						.then(() => sendResponse({ ok: true, data: undefined }))
+						.catch((error) =>
+							sendResponse({ ok: false, error: String(error) }),
+						);
 				});
 				return true;
 			}
-			handleStartPicker(channelId, note, tabId)
+			setStorage({ brokerBaseUrl: baseUrl })
+				.then(() => handleStartPicker(channelId, note, tabId))
 				.then(() => sendResponse({ ok: true, data: undefined }))
-				.catch((err) => sendResponse({ ok: false, error: String(err) }));
+				.catch((error) => sendResponse({ ok: false, error: String(error) }));
 			return true;
 		}
 
 		if (message.type === "omp:element-selected") {
-			const { event } = message as {
-				event: BrowserFeedbackEvent;
-				type: string;
-			};
+			const event = message.event;
+			if (!event) {
+				sendResponse({ ok: false, error: "Missing feedback event" });
+				return false;
+			}
 			const windowId = sender.tab?.windowId;
-			handleElementSelected(event, windowId).then(sendResponse);
+			handleElementSelected(event as BrowserFeedbackEvent, windowId).then(
+				sendResponse,
+			);
 			return true;
 		}
 

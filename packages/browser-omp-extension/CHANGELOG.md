@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+### Changed
+
+- replace manual auth-token copy/paste with OMP-initiated `/bf pair` code pairing
+- store revocable browser capability tokens in the extension instead of the broker root token
+- mark disconnected OMP websocket sessions honestly in broker session listings when the subscription socket closes
+
 ## [0.0.6] - 2026-07-04
 
 ### Changed
