@@ -15,7 +15,7 @@
     },
     "packages/browser-broker": {
       "name": "@oh-my-pi/browser-broker",
-      "version": "16.1.23",
+      "version": "0.0.1",
       "bin": {
         "omp-browser-broker": "src/cli.ts",
       },
@@ -28,7 +28,7 @@
     },
     "packages/browser-extension": {
       "name": "@oh-my-pi/browser-extension",
-      "version": "16.1.23",
+      "version": "0.0.1",
       "dependencies": {
         "@oh-my-pi/browser-protocol": "workspace:*",
         "linkedom": "catalog:",
@@ -41,13 +41,11 @@
       },
     },
     "packages/browser-omp-extension": {
-      "name": "@oh-my-pi/browser-omp-extension",
-      "version": "16.1.23",
-      "dependencies": {
+      "name": "omp-browser-feedback",
+      "version": "0.0.2",
+      "devDependencies": {
         "@oh-my-pi/browser-broker": "workspace:*",
         "@oh-my-pi/browser-protocol": "workspace:*",
-      },
-      "devDependencies": {
         "@oh-my-pi/pi-coding-agent": "*",
         "@types/bun": "catalog:",
       },
@@ -57,7 +55,7 @@
     },
     "packages/browser-protocol": {
       "name": "@oh-my-pi/browser-protocol",
-      "version": "16.1.23",
+      "version": "0.0.1",
       "dependencies": {
         "arktype": "catalog:",
       },
@@ -190,8 +188,6 @@
     "@oh-my-pi/browser-broker": ["@oh-my-pi/browser-broker@workspace:packages/browser-broker"],
 
     "@oh-my-pi/browser-extension": ["@oh-my-pi/browser-extension@workspace:packages/browser-extension"],
-
-    "@oh-my-pi/browser-omp-extension": ["@oh-my-pi/browser-omp-extension@workspace:packages/browser-omp-extension"],
 
     "@oh-my-pi/browser-protocol": ["@oh-my-pi/browser-protocol@workspace:packages/browser-protocol"],
 
@@ -528,6 +524,8 @@
     "object-hash": ["object-hash@3.0.0", "", {}, "sha512-RSn9F68PjH9HqtltsSnqYC1XXoWe9Bju5+213R98cNGttag9q9yAOTzdbsqvIa7aNm5WffBZFpWYr2aWrklWAw=="],
 
     "object-keys": ["object-keys@1.1.1", "", {}, "sha512-NuAESUOUMrlIXOfHKzD6bpPu3tYt3xvjNdRIQ+FeT0lNb4K8WR70CaDxhuNguS2XG+GjkyMwOzsN5ZktImfhLA=="],
+
+    "omp-browser-feedback": ["omp-browser-feedback@workspace:packages/browser-omp-extension"],
 
     "one-time": ["one-time@1.0.0", "", { "dependencies": { "fn.name": "1.x.x" } }, "sha512-5DXOiRKwuSEcQ/l0kGCF6Q3jcADFv5tSmRaJck/OqkVFcOzutB134KRSfF0xDrL39MNnqxbHBbUUcjZIhTgb2g=="],
 
