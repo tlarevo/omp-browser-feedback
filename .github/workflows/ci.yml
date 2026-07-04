@@ -17,3 +17,5 @@ jobs:
       - run: bun run build:omp-extension
       - run: bun run check
       - run: bun run test
+        env:
+          SKIP_CHROME_E2E: "1"

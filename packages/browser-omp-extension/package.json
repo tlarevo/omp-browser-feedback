@@ -1,7 +1,7 @@
 {
 	"type": "module",
 	"name": "@oh-my-pi/browser-omp-extension",
-	"version": "16.1.23",
+	"version": "0.0.1",
 	"description": "OMP extension for browser DOM feedback via the Chrome extension and local broker",
 	"homepage": "https://omp.sh",
 	"repository": {

@@ -1,7 +1,7 @@
 {
 	"type": "module",
 	"name": "@oh-my-pi/browser-protocol",
-	"version": "16.1.23",
+	"version": "0.0.1",
 	"description": "Shared browser feedback protocol types and validators for OMP",
 	"homepage": "https://omp.sh",
 	"repository": {
