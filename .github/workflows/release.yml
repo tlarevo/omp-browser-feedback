@@ -41,6 +41,4 @@ jobs:
           SKIP_OMP_SMOKE: "1"
       - run: bun scripts/prepare-release-package.ts packages/browser-omp-extension .release/browser-omp-extension
       - run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         working-directory: .release/browser-omp-extension
