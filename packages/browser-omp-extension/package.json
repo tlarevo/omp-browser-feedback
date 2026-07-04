@@ -14,12 +14,13 @@
 	"license": "MIT",
 	"omp": {
 		"extensions": [
-			"./src/extension.ts"
+			"./dist/extension.js"
 		]
 	},
-	"main": "./src/extension.ts",
+	"main": "./dist/extension.js",
 	"types": "./src/extension.ts",
 	"scripts": {
+		"build": "bun build src/extension.ts --outfile dist/extension.js --target=bun --format=esm",
 		"check": "biome check . && bun run check:types",
 		"check:types": "tsgo -p tsconfig.json --noEmit",
 		"lint": "biome lint .",
@@ -46,12 +47,13 @@
 		"provenance": true
 	},
 	"files": [
-		"src"
+		"src",
+		"dist"
 	],
 	"exports": {
 		".": {
 			"types": "./src/extension.ts",
-			"import": "./src/extension.ts"
+			"import": "./dist/extension.js"
 		},
 		"./*": {
 			"types": "./src/*.ts",

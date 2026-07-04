@@ -19,7 +19,8 @@
 		"check:types": "tsgo -p tsconfig.json --noEmit && bun run --workspaces --if-present check:types",
 		"check:omp-head": "bun scripts/check-against-omp-head.ts",
 		"test": "bun test ./test/*.test.ts && bun run --workspaces --if-present test",
-		"build:extension": "bun --cwd=packages/browser-extension run build"
+		"build:extension": "bun --cwd=packages/browser-extension run build",
+		"build:omp-extension": "bun --cwd=packages/browser-omp-extension run build"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.6",

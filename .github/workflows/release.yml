@@ -34,6 +34,7 @@ jobs:
           done
       - run: bun run check
       - run: bun run test
+      - run: bun run build:omp-extension
       - run: bun scripts/prepare-release-package.ts packages/browser-protocol .release/browser-protocol
       - run: bun scripts/prepare-release-package.ts packages/browser-broker .release/browser-broker
       - run: bun scripts/prepare-release-package.ts packages/browser-omp-extension .release/browser-omp-extension

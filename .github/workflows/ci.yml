@@ -14,5 +14,6 @@ jobs:
         with:
           bun-version: 1.3.14
       - run: bun install --frozen-lockfile
+      - run: bun run build:omp-extension
       - run: bun run check
       - run: bun run test
