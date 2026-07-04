@@ -8,7 +8,7 @@ export interface BrowserFeedbackConfig {
 const DEFAULT_CONFIG: BrowserFeedbackConfig = { autoRun: false };
 
 function configPath(): string {
-	return path.join(Bun.env["HOME"] ?? "~", ".omp", "browser-feedback.json");
+	return path.join(Bun.env.HOME ?? "~", ".omp", "browser-feedback.json");
 }
 
 export async function readConfig(): Promise<BrowserFeedbackConfig> {
@@ -20,7 +20,9 @@ export async function readConfig(): Promise<BrowserFeedbackConfig> {
 	}
 }
 
-export async function writeConfig(config: Partial<BrowserFeedbackConfig>): Promise<void> {
+export async function writeConfig(
+	config: Partial<BrowserFeedbackConfig>,
+): Promise<void> {
 	const current = await readConfig();
 	const next = { ...current, ...config };
 	await fs.mkdir(path.dirname(configPath()), { recursive: true });

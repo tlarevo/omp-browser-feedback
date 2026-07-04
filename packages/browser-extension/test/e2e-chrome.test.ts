@@ -19,14 +19,18 @@ import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
 import * as os from "node:os";
 import * as path from "node:path";
-import { createBrowserBrokerServer, type BrowserBrokerServer } from "@oh-my-pi/browser-broker";
+import {
+	type BrowserBrokerServer,
+	createBrowserBrokerServer,
+} from "@oh-my-pi/browser-broker";
 import { BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
-import type { BrowserContext, Server as BunServer, Worker as PlaywrightWorker } from "playwright";
+import type { Server as BunServer } from "bun";
+import type { BrowserContext, Worker as PlaywrightWorker } from "playwright";
 import { chromium } from "playwright";
 
 // ── Configuration ──────────────────────────────────────────────────────────
 
-const SKIP = process.env["SKIP_CHROME_E2E"] === "1";
+const SKIP = process.env.SKIP_CHROME_E2E === "1";
 const EXTENSION_ROOT = path.resolve(import.meta.dir, "..");
 const DIST_ENTRY = path.join(EXTENSION_ROOT, "dist", "background-entry.js");
 const AUTH_TOKEN = "e2e-test-secret-token";
@@ -40,7 +44,7 @@ let context: BrowserContext;
 let serviceWorker: PlaywrightWorker;
 let extensionId: string;
 let userDataDir: string;
-let testServer: BunServer;
+let testServer: BunServer<undefined>;
 let testPageUrl: string;
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -55,8 +59,9 @@ async function pollUntil<T>(
 	while (true) {
 		const value = await fn();
 		if (predicate(value)) return value;
-		if (Date.now() >= deadline) throw new Error(`pollUntil timed out after ${timeoutMs}ms`);
-		await new Promise(r => setTimeout(r, intervalMs));
+		if (Date.now() >= deadline)
+			throw new Error(`pollUntil timed out after ${timeoutMs}ms`);
+		await new Promise((r) => setTimeout(r, intervalMs));
 	}
 }
 
@@ -75,19 +80,29 @@ beforeAll(async () => {
 	let brokerStarted = false;
 	for (let port = 4317; port <= 4337; port++) {
 		try {
-			broker = await createBrowserBrokerServer({ host: "127.0.0.1", port, authToken: AUTH_TOKEN });
+			broker = await createBrowserBrokerServer({
+				host: "127.0.0.1",
+				port,
+				authToken: AUTH_TOKEN,
+			});
 			brokerStarted = true;
 			break;
 		} catch {
 			// port occupied — try next
 		}
 	}
-	if (!brokerStarted) throw new Error("All ports 4317–4337 are occupied; cannot start E2E broker.");
+	if (!brokerStarted)
+		throw new Error(
+			"All ports 4317–4337 are occupied; cannot start E2E broker.",
+		);
 
 	// Register a test OMP session
 	await fetch(`${broker.baseUrl}/api/sessions/register`, {
 		method: "POST",
-		headers: { Authorization: `Bearer ${AUTH_TOKEN}`, "Content-Type": "application/json" },
+		headers: {
+			Authorization: `Bearer ${AUTH_TOKEN}`,
+			"Content-Type": "application/json",
+		},
 		body: JSON.stringify({
 			protocolVersion: BROWSER_PROTOCOL_VERSION,
 			sessionId: SESSION_ID,
@@ -143,21 +158,37 @@ beforeAll(async () => {
 	await wakePage.close();
 
 	const existing = context.serviceWorkers()[0];
-	serviceWorker = existing ?? (await Promise.race([
-		swPromise,
-		new Promise<never>((_, reject) =>
-			setTimeout(() => reject(new Error("Extension service worker did not register within 15 s")), 15_000),
-		),
-	]));
+	serviceWorker =
+		existing ??
+		(await Promise.race([
+			swPromise,
+			new Promise<never>((_, reject) =>
+				setTimeout(
+					() =>
+						reject(
+							new Error(
+								"Extension service worker did not register within 15 s",
+							),
+						),
+					15_000,
+				),
+			),
+		]));
 
 	extensionId = serviceWorker.url().split("/")[2] ?? "";
-	if (!extensionId) throw new Error(`Could not extract extension ID from: ${serviceWorker.url()}`);
+	if (!extensionId)
+		throw new Error(
+			`Could not extract extension ID from: ${serviceWorker.url()}`,
+		);
 
 	// Seed chrome.storage.local: auth token + selected session (popup reads these on open)
 	await serviceWorker.evaluate(
 		({ token, sessionId }) =>
-			new Promise<void>(resolve => {
-				chrome.storage.local.set({ authToken: token, selectedSessionId: sessionId }, resolve);
+			new Promise<void>((resolve) => {
+				chrome.storage.local.set(
+					{ authToken: token, selectedSessionId: sessionId },
+					resolve,
+				);
 			}),
 		{ token: AUTH_TOKEN, sessionId: SESSION_ID },
 	);
@@ -179,7 +210,10 @@ describe.skipIf(SKIP)("Chrome extension smoke test", () => {
 		await popup.goto(`chrome-extension://${extensionId}/src/popup/index.html`);
 
 		// "ready" state renders radio inputs named "session" — wait for the first one
-		await popup.locator('input[type="radio"][name="session"]').first().waitFor({ state: "visible", timeout: 10_000 });
+		await popup
+			.locator('input[type="radio"][name="session"]')
+			.first()
+			.waitFor({ state: "visible", timeout: 10_000 });
 
 		const labelText = await popup.locator("label").first().textContent();
 		expect(labelText).toContain(SESSION_NAME);
@@ -199,15 +233,21 @@ describe.skipIf(SKIP)("Chrome extension smoke test", () => {
 		const tabId = await serviceWorker.evaluate(async (title: string) => {
 			const tabs = await chrome.tabs.query({ title });
 			const id = tabs[0]?.id;
-			if (!id) throw new Error(`Tab not found; titles: ${JSON.stringify(tabs.map(t => t.title))}`);
+			if (!id)
+				throw new Error(
+					`Tab not found; titles: ${JSON.stringify(tabs.map((t) => t.title))}`,
+				);
 			return id;
 		}, "OMP E2E Target");
 
 		// Seed broker credentials in storage (background reads these on omp:element-selected)
 		await serviceWorker.evaluate(
 			({ baseUrl, token }) =>
-				new Promise<void>(resolve => {
-					chrome.storage.local.set({ brokerBaseUrl: baseUrl, brokerAuthToken: token }, resolve);
+				new Promise<void>((resolve) => {
+					chrome.storage.local.set(
+						{ brokerBaseUrl: baseUrl, brokerAuthToken: token },
+						resolve,
+					);
 				}),
 			{ baseUrl: broker.baseUrl, token: AUTH_TOKEN },
 		);
@@ -216,12 +256,17 @@ describe.skipIf(SKIP)("Chrome extension smoke test", () => {
 		// The response only arrives after element selection — don't await yet or it deadlocks.
 		const pickerActivation = serviceWorker.evaluate(
 			({ tabId, channelId }: { tabId: number; channelId: string }) =>
-				chrome.tabs.sendMessage(tabId, { type: "omp:activate-picker", channelId }),
+				chrome.tabs.sendMessage(tabId, {
+					type: "omp:activate-picker",
+					channelId,
+				}),
 			{ tabId, channelId: SESSION_ID },
 		);
 
 		// Wait for the picker overlay to appear in the test page DOM
-		await testPage.locator('[data-omp-picker-overlay="true"]').waitFor({ state: "attached", timeout: 8_000 });
+		await testPage
+			.locator('[data-omp-picker-overlay="true"]')
+			.waitFor({ state: "attached", timeout: 8_000 });
 
 		// Hover then click the target element:
 		//   - hover triggers the capture-phase mouseover handler → sets `current`
@@ -239,9 +284,11 @@ describe.skipIf(SKIP)("Chrome extension smoke test", () => {
 					`${broker.baseUrl}/api/sessions/${SESSION_ID}/feedback/latest`,
 					{ headers: { Authorization: `Bearer ${AUTH_TOKEN}` } },
 				);
-				return (await res.json()) as { feedback?: { payload?: { type?: string } } | null };
+				return (await res.json()) as {
+					feedback?: { payload?: { type?: string } } | null;
+				};
 			},
-			body => body.feedback?.payload?.type === "dom.selection",
+			(body) => body.feedback?.payload?.type === "dom.selection",
 			10_000,
 		);
 

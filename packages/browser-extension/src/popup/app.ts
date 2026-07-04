@@ -7,20 +7,22 @@ interface StoredState {
 }
 
 async function readStorage(): Promise<StoredState> {
-	return new Promise(resolve => {
-		chrome.storage.local.get(["authToken", "selectedSessionId"], items => {
+	return new Promise((resolve) => {
+		chrome.storage.local.get(["authToken", "selectedSessionId"], (items) => {
 			resolve(items as StoredState);
 		});
 	});
 }
 
 async function writeStorage(update: Partial<StoredState>): Promise<void> {
-	return new Promise(resolve => {
+	return new Promise((resolve) => {
 		chrome.storage.local.set(update, resolve);
 	});
 }
 
-async function sendToBackground<T>(message: Record<string, unknown>): Promise<T> {
+async function sendToBackground<T>(
+	message: Record<string, unknown>,
+): Promise<T> {
 	return new Promise((resolve, reject) => {
 		chrome.runtime.sendMessage(message, (response: T) => {
 			if (chrome.runtime.lastError) {
@@ -66,7 +68,7 @@ async function initPopup(): Promise<void> {
 		},
 
 		async onStartPicker(sessionId, note) {
-			const session = currentSessions.find(s => s.sessionId === sessionId);
+			const session = currentSessions.find((s) => s.sessionId === sessionId);
 			if (!session) return;
 			await sendToBackground({
 				type: "omp:start-picker",
@@ -89,9 +91,10 @@ async function initPopup(): Promise<void> {
 			return;
 		}
 
-		const brokerResult = await sendToBackground<{ ok: boolean; data: { baseUrl: string; port: number } | null }>(
-			{ type: "omp:discover-broker" },
-		);
+		const brokerResult = await sendToBackground<{
+			ok: boolean;
+			data: { baseUrl: string; port: number } | null;
+		}>({ type: "omp:discover-broker" });
 
 		if (!brokerResult.ok || !brokerResult.data) {
 			render({ kind: "no-broker", attemptedPorts: DEFAULT_PORTS });
@@ -104,14 +107,24 @@ async function initPopup(): Promise<void> {
 			ok: boolean;
 			data?: BrowserSessionRegistration[];
 			error?: string;
-		}>({ type: "omp:list-sessions", baseUrl: currentBaseUrl, authToken: currentAuthToken });
+		}>({
+			type: "omp:list-sessions",
+			baseUrl: currentBaseUrl,
+			authToken: currentAuthToken,
+		});
 
 		if (!sessionsResult.ok) {
-			if (sessionsResult.error?.includes("401") || sessionsResult.error?.includes("unauthorized")) {
+			if (
+				sessionsResult.error?.includes("401") ||
+				sessionsResult.error?.includes("unauthorized")
+			) {
 				render({ kind: "missing-auth", baseUrl: currentBaseUrl });
 				return;
 			}
-			render({ kind: "error", message: sessionsResult.error ?? "Unknown error" });
+			render({
+				kind: "error",
+				message: sessionsResult.error ?? "Unknown error",
+			});
 			return;
 		}
 

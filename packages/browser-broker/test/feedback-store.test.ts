@@ -19,6 +19,9 @@ describe("InMemoryFeedbackStore", () => {
 		store.add({ channelId: "a", eventId: "evt-2" });
 		store.add({ channelId: "a", eventId: "evt-3" });
 
-		expect(store.list("a").map(event => event.eventId)).toEqual(["evt-2", "evt-3"]);
+		expect(store.list("a").map((event) => event.eventId)).toEqual([
+			"evt-2",
+			"evt-3",
+		]);
 	});
 });

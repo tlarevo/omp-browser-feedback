@@ -7,7 +7,10 @@ export interface BrowserBrokerSocketData {
 }
 
 export class BrowserWebSocketRouter {
-	readonly #ompSockets = new Map<string, Set<ServerWebSocket<BrowserBrokerSocketData>>>();
+	readonly #ompSockets = new Map<
+		string,
+		Set<ServerWebSocket<BrowserBrokerSocketData>>
+	>();
 
 	add(socket: ServerWebSocket<BrowserBrokerSocketData>): void {
 		const sockets = this.#ompSockets.get(socket.data.sessionId) ?? new Set();
@@ -30,7 +33,10 @@ export class BrowserWebSocketRouter {
 		}
 	}
 
-	sendFeedbackToSocket(socket: ServerWebSocket<BrowserBrokerSocketData>, event: BrowserFeedbackEvent): void {
+	sendFeedbackToSocket(
+		socket: ServerWebSocket<BrowserBrokerSocketData>,
+		event: BrowserFeedbackEvent,
+	): void {
 		socket.send(JSON.stringify({ type: "browser.feedback", event }));
 	}
 }

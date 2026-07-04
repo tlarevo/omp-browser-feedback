@@ -1,0 +1,81 @@
+name: omp drift
+
+on:
+  schedule:
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+jobs:
+  drift:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+      - run: bun install --frozen-lockfile
+      - name: Typecheck browser OMP extension against omp main
+        id: check
+        run: |
+          set -o pipefail
+          bun run check:omp-head 2>&1 | tee drift-output.log
+        continue-on-error: true
+      - name: Upload diagnostics
+        if: steps.check.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: drift-output
+          path: drift-output.log
+      - name: Fail the job if drift was detected
+        if: steps.check.outcome == 'failure'
+        run: exit 1
+
+  file-issue:
+    needs: drift
+    if: failure()
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+      actions: read
+    steps:
+      - name: Download diagnostics
+        uses: actions/download-artifact@v4
+        with:
+          name: drift-output
+        continue-on-error: true
+      - name: File or reuse a drift issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+
+          existing=$(gh issue list --repo "$GITHUB_REPOSITORY" \
+            --search 'in:title "omp HEAD drift" is:open' \
+            --json number --jq '.[0].number // empty')
+          if [ -n "$existing" ]; then
+            echo "Open drift issue #$existing already exists — skipping."
+            exit 0
+          fi
+
+          if [ -f drift-output.log ]; then
+            diagnostics=$(tail -n 200 drift-output.log)
+          else
+            diagnostics="Diagnostics log unavailable — see the workflow run for details."
+          fi
+
+          title="omp HEAD drift: browser OMP extension fails to typecheck against the current omp source"
+          body=$(printf '%s\n' \
+            "The scheduled \\`omp-drift\\` workflow detected that \\`packages/browser-omp-extension\\` no longer typechecks against the current \\`can1357/oh-my-pi\\`@main source (\\`bun run check:omp-head\\`)." \
+            "" \
+            "Failing run: $RUN_URL" \
+            "" \
+            "Diagnostics (last 200 lines):" \
+            '```' \
+            "$diagnostics" \
+            '```' \
+            "" \
+            "Update the browser OMP extension to match the new host API shape, then verify with \\`bun run check\\`, \\`bun run test\\`, and \\`bun run check:omp-head\\` before closing this issue.")
+
+          gh issue create --repo "$GITHUB_REPOSITORY" --title "$title" --body "$body"

@@ -3,12 +3,28 @@
 	"name": "@oh-my-pi/browser-omp-extension",
 	"version": "16.1.23",
 	"description": "OMP extension for browser DOM feedback via the Chrome extension and local broker",
+	"homepage": "https://omp.sh",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/tlarevo/omp-browser-feedback.git"
+	},
+	"bugs": {
+		"url": "https://github.com/tlarevo/omp-browser-feedback/issues"
+	},
 	"license": "MIT",
 	"omp": {
-		"extensions": ["./src/extension.ts"]
+		"extensions": [
+			"./src/extension.ts"
+		]
 	},
+	"main": "./src/extension.ts",
+	"types": "./src/extension.ts",
 	"scripts": {
+		"check": "biome check . && bun run check:types",
 		"check:types": "tsgo -p tsconfig.json --noEmit",
+		"lint": "biome lint .",
+		"fix": "biome check --write --unsafe .",
+		"fmt": "biome format --write .",
 		"test": "bun test --parallel"
 	},
 	"dependencies": {
@@ -24,5 +40,22 @@
 	},
 	"engines": {
 		"bun": ">=1.3.14"
+	},
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
+	"files": [
+		"src"
+	],
+	"exports": {
+		".": {
+			"types": "./src/extension.ts",
+			"import": "./src/extension.ts"
+		},
+		"./*": {
+			"types": "./src/*.ts",
+			"import": "./src/*.ts"
+		}
 	}
 }

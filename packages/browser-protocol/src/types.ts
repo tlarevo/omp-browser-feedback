@@ -87,7 +87,9 @@ export interface PageScreenshotFeedback {
 	screenshot: BrowserScreenshotRef;
 }
 
-export type BrowserFeedbackEvent = DomSelectionFeedback | PageScreenshotFeedback;
+export type BrowserFeedbackEvent =
+	| DomSelectionFeedback
+	| PageScreenshotFeedback;
 
 export interface BrowserAck {
 	ok: true;
@@ -100,4 +102,6 @@ export interface BrowserErrorEnvelope {
 	message: string;
 }
 
-export type BrowserValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
+export type BrowserValidationResult<T> =
+	| { ok: true; value: T }
+	| { ok: false; error: string };

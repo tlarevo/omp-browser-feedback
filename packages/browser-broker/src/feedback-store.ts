@@ -14,7 +14,10 @@ export class InMemoryFeedbackStore {
 	readonly #maxEventsPerChannel: number;
 
 	constructor(options: InMemoryFeedbackStoreOptions) {
-		this.#maxEventsPerChannel = Math.max(1, Math.floor(options.maxEventsPerChannel));
+		this.#maxEventsPerChannel = Math.max(
+			1,
+			Math.floor(options.maxEventsPerChannel),
+		);
 	}
 
 	add(event: StoredBrowserFeedback): StoredBrowserFeedback {

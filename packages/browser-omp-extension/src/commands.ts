@@ -1,17 +1,23 @@
 import type { ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
-import { BrowserBrokerClient, createBrowserBrokerClientFromDiscovery } from "./client";
-import { renderBrowserFeedbackContext } from "./renderer";
 import {
+	clearActiveFeedbackSubscription,
 	ensureBrokerRunning,
-	stopActiveBroker,
 	getInProcessBrokerStatus,
 	setActiveFeedbackSubscription,
-	clearActiveFeedbackSubscription,
+	stopActiveBroker,
 } from "./broker-lifecycle";
+import {
+	BrowserBrokerClient,
+	createBrowserBrokerClientFromDiscovery,
+} from "./client";
 import { readConfig, writeConfig } from "./config";
 import type { OnFeedbackFn } from "./extension";
+import { renderBrowserFeedbackContext } from "./renderer";
 
-function parseBrokerStartArgs(argsAfterStart: string): { port?: number; portRange?: string } {
+function parseBrokerStartArgs(argsAfterStart: string): {
+	port?: number;
+	portRange?: string;
+} {
 	const portMatch = argsAfterStart.match(/--port(?:=|\s+)(\d+)/);
 	const rangeMatch = argsAfterStart.match(/--port-range(?:=|\s+)(\d+-\d+)/);
 	return {
@@ -42,13 +48,19 @@ export async function handleBfCommand(
 						: `Browser broker started at ${result.baseUrl} (port ${result.port}).`,
 				);
 			} catch (err) {
-				notify(`Failed to start browser broker: ${err instanceof Error ? err.message : String(err)}`);
+				notify(
+					`Failed to start browser broker: ${err instanceof Error ? err.message : String(err)}`,
+				);
 			}
 			return;
 		}
 		if (sub === "stop") {
 			const stopped = await stopActiveBroker();
-			notify(stopped ? "Browser broker stopped." : "No in-process browser broker is running.");
+			notify(
+				stopped
+					? "Browser broker stopped."
+					: "No in-process browser broker is running.",
+			);
 			return;
 		}
 		const inProcess = getInProcessBrokerStatus();
@@ -65,7 +77,10 @@ export async function handleBfCommand(
 			const result = await ensureBrokerRunning();
 			const sessionId = ctx.sessionManager.getSessionId();
 			const sessionName = ctx.sessionManager.getSessionName() ?? sessionId;
-			const client = new BrowserBrokerClient({ baseUrl: result.baseUrl, authToken: result.authToken });
+			const client = new BrowserBrokerClient({
+				baseUrl: result.baseUrl,
+				authToken: result.authToken,
+			});
 			await client.registerSession({
 				sessionId,
 				sessionName,
@@ -85,7 +100,9 @@ export async function handleBfCommand(
 				].join("\n"),
 			);
 		} catch (err) {
-			notify(`Failed to connect: ${err instanceof Error ? err.message : String(err)}`);
+			notify(
+				`Failed to connect: ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
 		return;
 	}
@@ -101,7 +118,9 @@ export async function handleBfCommand(
 			await client.unregisterSession(ctx.sessionManager.getSessionId());
 			notify("Session unregistered from browser broker.");
 		} catch (err) {
-			notify(`Failed to unregister: ${err instanceof Error ? err.message : String(err)}`);
+			notify(
+				`Failed to unregister: ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
 		return;
 	}
@@ -120,7 +139,7 @@ export async function handleBfCommand(
 		try {
 			const sessions = await client.listSessions();
 			const sessionId = ctx.sessionManager.getSessionId();
-			const registered = sessions.some(s => s.sessionId === sessionId);
+			const registered = sessions.some((s) => s.sessionId === sessionId);
 			const config = await readConfig();
 			notify(
 				[
@@ -133,7 +152,9 @@ export async function handleBfCommand(
 				].join("\n"),
 			);
 		} catch (err) {
-			notify(`Broker reachable but status check failed: ${err instanceof Error ? err.message : String(err)}`);
+			notify(
+				`Broker reachable but status check failed: ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
 		return;
 	}
@@ -142,10 +163,14 @@ export async function handleBfCommand(
 		const sub = remainder.trim().toLowerCase();
 		if (sub === "auto-run on") {
 			await writeConfig({ autoRun: true });
-			notify("browser-feedback: auto-run on — feedback will be submitted automatically");
+			notify(
+				"browser-feedback: auto-run on — feedback will be submitted automatically",
+			);
 		} else if (sub === "auto-run off") {
 			await writeConfig({ autoRun: false });
-			notify("browser-feedback: auto-run off — feedback will pre-fill the prompt box");
+			notify(
+				"browser-feedback: auto-run off — feedback will pre-fill the prompt box",
+			);
 		} else {
 			const config = await readConfig();
 			notify(
@@ -170,17 +195,26 @@ export async function handleBfCommand(
 			return;
 		}
 		try {
-			await client.updateSession(ctx.sessionManager.getSessionId(), { displayName: remainder });
+			await client.updateSession(ctx.sessionManager.getSessionId(), {
+				displayName: remainder,
+			});
 			notify(`Session display name updated to "${remainder}".`);
 		} catch (err) {
-			notify(`Failed to rename session: ${err instanceof Error ? err.message : String(err)}`);
+			notify(
+				`Failed to rename session: ${err instanceof Error ? err.message : String(err)}`,
+			);
 		}
 		return;
 	}
 
 	const client = await createBrowserBrokerClientFromDiscovery();
 	if (!client) {
-		if (first === "latest" || first === "list" || first === "use" || first === "clear") {
+		if (
+			first === "latest" ||
+			first === "list" ||
+			first === "use" ||
+			first === "clear"
+		) {
 			notify("Browser broker is not connected. Use `/bf connect` first.");
 			return;
 		}
@@ -203,27 +237,35 @@ export async function handleBfCommand(
 	}
 
 	if (first === "list") {
-		const events = await client.listFeedback?.(sessionId) ?? [];
+		const events = (await client.listFeedback?.(sessionId)) ?? [];
 		if (events.length === 0) {
 			notify("No browser feedback received for this session.");
 			return;
 		}
-		notify(events.map(e => `${e.payload.eventId} ${e.payload.type}`).join("\n"));
+		notify(
+			events.map((e) => `${e.payload.eventId} ${e.payload.type}`).join("\n"),
+		);
 		return;
 	}
 
 	if (first === "clear") {
-		const cleared = await client.clearFeedback?.(sessionId) ?? 0;
+		const cleared = (await client.clearFeedback?.(sessionId)) ?? 0;
 		notify(`Cleared ${cleared} browser feedback event(s).`);
 		return;
 	}
 
 	if (first === "use") {
 		const eventId = rest[0];
-		const events = await client.listFeedback?.(sessionId) ?? [];
-		const selected = eventId ? events.find(e => e.payload.eventId === eventId) : await client.latestFeedback?.(sessionId);
+		const events = (await client.listFeedback?.(sessionId)) ?? [];
+		const selected = eventId
+			? events.find((e) => e.payload.eventId === eventId)
+			: await client.latestFeedback?.(sessionId);
 		if (!selected) {
-			notify(eventId ? `Browser feedback event ${eventId} not found.` : "No browser feedback received.");
+			notify(
+				eventId
+					? `Browser feedback event ${eventId} not found.`
+					: "No browser feedback received.",
+			);
 			return;
 		}
 		notify(renderBrowserFeedbackContext(selected.payload));

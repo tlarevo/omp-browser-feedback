@@ -11,7 +11,10 @@ export interface BrokerHealth {
 	broker_id: string;
 }
 
-export type ExtensionFetch = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+export type ExtensionFetch = (
+	url: string | URL | Request,
+	init?: RequestInit,
+) => Promise<Response>;
 
 export interface DiscoveredBroker {
 	baseUrl: string;
@@ -48,7 +51,9 @@ export async function probeBroker(
 	fetchImpl: ExtensionFetch = fetch,
 ): Promise<BrokerHealth | undefined> {
 	try {
-		const response = await fetchImpl(`${baseUrl.replace(/\/+$/, "")}/api/health`);
+		const response = await fetchImpl(
+			`${baseUrl.replace(/\/+$/, "")}/api/health`,
+		);
 		if (!response.ok) return undefined;
 		const health = (await response.json()) as BrokerHealth;
 		if (health.service !== BROWSER_BROKER_SERVICE) return undefined;
@@ -59,7 +64,9 @@ export async function probeBroker(
 	}
 }
 
-export async function discoverBroker(options: DiscoverBrokerOptions): Promise<DiscoveredBroker | undefined> {
+export async function discoverBroker(
+	options: DiscoverBrokerOptions,
+): Promise<DiscoveredBroker | undefined> {
 	for (const port of options.ports) {
 		const baseUrl = `http://${options.host}:${port}`;
 		const health = await probeBroker(baseUrl, options.fetch);
@@ -68,30 +75,44 @@ export async function discoverBroker(options: DiscoverBrokerOptions): Promise<Di
 	return undefined;
 }
 
-export async function submitFeedback(options: SubmitFeedbackOptions): Promise<void> {
+export async function submitFeedback(
+	options: SubmitFeedbackOptions,
+): Promise<void> {
 	const fetchImpl = options.fetch ?? fetch;
 	const form = new FormData();
 	form.set("event", JSON.stringify(options.event));
 	if (options.screenshot) {
 		form.set("screenshot", options.screenshot, "screenshot.png");
 	}
-	const response = await fetchImpl(`${options.baseUrl.replace(/\/+$/, "")}/api/feedback`, {
-		method: "POST",
-		headers: { Authorization: `Bearer ${options.authToken}` },
-		body: form,
-	});
+	const response = await fetchImpl(
+		`${options.baseUrl.replace(/\/+$/, "")}/api/feedback`,
+		{
+			method: "POST",
+			headers: { Authorization: `Bearer ${options.authToken}` },
+			body: form,
+		},
+	);
 	if (!response.ok) {
-		throw new Error(`Browser feedback submission failed with HTTP ${response.status}`);
+		throw new Error(
+			`Browser feedback submission failed with HTTP ${response.status}`,
+		);
 	}
 }
 
-export async function listSessions(options: ListSessionsOptions): Promise<BrowserSessionRegistration[]> {
+export async function listSessions(
+	options: ListSessionsOptions,
+): Promise<BrowserSessionRegistration[]> {
 	const fetchImpl = options.fetch ?? fetch;
-	const response = await fetchImpl(`${options.baseUrl.replace(/\/+$/, "")}/api/sessions`, {
-		headers: { Authorization: `Bearer ${options.authToken}` },
-	});
+	const response = await fetchImpl(
+		`${options.baseUrl.replace(/\/+$/, "")}/api/sessions`,
+		{
+			headers: { Authorization: `Bearer ${options.authToken}` },
+		},
+	);
 	if (!response.ok) {
-		throw new Error(`Browser session listing failed with HTTP ${response.status}`);
+		throw new Error(
+			`Browser session listing failed with HTTP ${response.status}`,
+		);
 	}
 	const body = (await response.json()) as ListSessionsResult;
 	return body.sessions;

@@ -1,7 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
 import { parseHTML } from "linkedom";
-import { activatePickerAndCapture, buildDomSelectionFeedback } from "../src/content-script";
+import {
+	activatePickerAndCapture,
+	buildDomSelectionFeedback,
+} from "../src/content-script";
 
 describe("buildDomSelectionFeedback", () => {
 	test("captures page, selector, attributes, bounds, and note", () => {
@@ -9,13 +12,16 @@ describe("buildDomSelectionFeedback", () => {
 			"<!doctype html><title>Checkout</title><button data-testid='submit' aria-label='Submit order'>Buy</button>",
 		);
 		document.title = "Checkout";
-		Object.defineProperty(window, "location", { value: { href: "https://example.com/cart" } });
+		Object.defineProperty(window, "location", {
+			value: { href: "https://example.com/cart" },
+		});
 		Object.defineProperty(window, "innerWidth", { value: 1280 });
 		Object.defineProperty(window, "innerHeight", { value: 720 });
 		Object.defineProperty(window, "devicePixelRatio", { value: 2 });
 		window.getComputedStyle = () =>
 			({
-				getPropertyValue: (property: string) => (property === "display" ? "inline-block" : ""),
+				getPropertyValue: (property: string) =>
+					property === "display" ? "inline-block" : "",
 			}) as CSSStyleDeclaration;
 		const button = document.querySelector("button");
 		if (!button) throw new Error("Missing button");
@@ -53,7 +59,8 @@ describe("buildDomSelectionFeedback", () => {
 			},
 			note: "Make this clearer",
 		});
-		if (event.type !== "dom.selection") throw new Error("Expected DOM selection feedback");
+		if (event.type !== "dom.selection")
+			throw new Error("Expected DOM selection feedback");
 		expect(event.element).toMatchObject({
 			selector: '[data-testid="submit"]',
 			tagName: "BUTTON",
@@ -67,12 +74,18 @@ describe("buildDomSelectionFeedback", () => {
 
 describe("activatePickerAndCapture", () => {
 	test("returns a handle and calls callback with null on deactivate without selection", () => {
-		const { document } = parseHTML("<!doctype html><body><button id='btn'>OK</button></body>");
+		const { document } = parseHTML(
+			"<!doctype html><body><button id='btn'>OK</button></body>",
+		);
 		let result: unknown = "not-called";
 
-		const handle = activatePickerAndCapture(document, { channelId: "ses_1" }, event => {
-			result = event;
-		});
+		const handle = activatePickerAndCapture(
+			document,
+			{ channelId: "ses_1" },
+			(event) => {
+				result = event;
+			},
+		);
 
 		handle.deactivate();
 		expect(result).toBe("not-called");
@@ -80,7 +93,11 @@ describe("activatePickerAndCapture", () => {
 
 	test("appends an overlay element to the body", () => {
 		const { document } = parseHTML("<!doctype html><body></body>");
-		const handle = activatePickerAndCapture(document, { channelId: "ses_1" }, () => {});
+		const handle = activatePickerAndCapture(
+			document,
+			{ channelId: "ses_1" },
+			() => {},
+		);
 		expect(document.querySelector("[data-omp-picker-overlay]")).not.toBeNull();
 		handle.deactivate();
 	});

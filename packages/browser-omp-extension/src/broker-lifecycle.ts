@@ -1,15 +1,15 @@
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
-	DEFAULT_BROWSER_BROKER_HOST,
-	generateBrowserBrokerToken,
-	createBrowserBrokerServer,
-	type BrowserBrokerServer,
-	writeDiscoveryFile,
-	readDiscoveryFile,
-	discoverCompatibleBroker,
-	resolveBrokerPorts,
 	type BrokerPortOptions,
+	type BrowserBrokerServer,
+	createBrowserBrokerServer,
+	DEFAULT_BROWSER_BROKER_HOST,
+	discoverCompatibleBroker,
+	generateBrowserBrokerToken,
+	readDiscoveryFile,
+	resolveBrokerPorts,
+	writeDiscoveryFile,
 } from "@oh-my-pi/browser-broker";
 import { BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
 import type { BrowserFeedbackSubscription } from "./client";
@@ -22,12 +22,20 @@ let _activeAuthToken: string | undefined;
 let _activeSubscription: BrowserFeedbackSubscription | undefined;
 
 function defaultDiscoveryPath(): string {
-	return path.join(Bun.env["HOME"] ?? "~", ".omp", "browser-broker.json");
+	return path.join(Bun.env.HOME ?? "~", ".omp", "browser-broker.json");
 }
 
-export function getInProcessBrokerStatus(): { running: boolean; baseUrl?: string; port?: number } {
+export function getInProcessBrokerStatus(): {
+	running: boolean;
+	baseUrl?: string;
+	port?: number;
+} {
 	if (_activeBroker) {
-		return { running: true, baseUrl: _activeBroker.baseUrl, port: _activeBroker.port };
+		return {
+			running: true,
+			baseUrl: _activeBroker.baseUrl,
+			port: _activeBroker.port,
+		};
 	}
 	return { running: false };
 }
@@ -43,19 +51,34 @@ export interface BrokerStartResult {
 	reused: boolean;
 }
 
-export async function ensureBrokerRunning(options: BrokerStartOptions = {}): Promise<BrokerStartResult> {
+export async function ensureBrokerRunning(
+	options: BrokerStartOptions = {},
+): Promise<BrokerStartResult> {
 	const discoveryPath = options.discoveryPath ?? defaultDiscoveryPath();
 	const ports = resolveBrokerPorts(options);
 
 	if (_activeBroker && _activeAuthToken) {
-		return { baseUrl: _activeBroker.baseUrl, authToken: _activeAuthToken, port: _activeBroker.port, reused: true };
+		return {
+			baseUrl: _activeBroker.baseUrl,
+			authToken: _activeAuthToken,
+			port: _activeBroker.port,
+			reused: true,
+		};
 	}
 
 	const discovery = await readDiscoveryFile(discoveryPath);
 	if (discovery) {
-		const existing = await discoverCompatibleBroker({ host: discovery.host, ports: [discovery.port] });
+		const existing = await discoverCompatibleBroker({
+			host: discovery.host,
+			ports: [discovery.port],
+		});
 		if (existing) {
-			return { baseUrl: existing.baseUrl, authToken: discovery.auth_token, port: existing.port, reused: true };
+			return {
+				baseUrl: existing.baseUrl,
+				authToken: discovery.auth_token,
+				port: existing.port,
+				reused: true,
+			};
 		}
 	}
 
@@ -64,7 +87,11 @@ export async function ensureBrokerRunning(options: BrokerStartOptions = {}): Pro
 
 	for (const port of ports) {
 		try {
-			server = await createBrowserBrokerServer({ host: DEFAULT_BROWSER_BROKER_HOST, port, authToken });
+			server = await createBrowserBrokerServer({
+				host: DEFAULT_BROWSER_BROKER_HOST,
+				port,
+				authToken,
+			});
 			break;
 		} catch {
 			// port occupied, try next
@@ -72,7 +99,11 @@ export async function ensureBrokerRunning(options: BrokerStartOptions = {}): Pro
 	}
 
 	if (!server) {
-		server = await createBrowserBrokerServer({ host: DEFAULT_BROWSER_BROKER_HOST, port: 0, authToken });
+		server = await createBrowserBrokerServer({
+			host: DEFAULT_BROWSER_BROKER_HOST,
+			port: 0,
+			authToken,
+		});
 	}
 
 	_activeBroker = server;
@@ -91,10 +122,17 @@ export async function ensureBrokerRunning(options: BrokerStartOptions = {}): Pro
 		started_at: new Date().toISOString(),
 	});
 
-	return { baseUrl: server.baseUrl, authToken, port: server.port, reused: false };
+	return {
+		baseUrl: server.baseUrl,
+		authToken,
+		port: server.port,
+		reused: false,
+	};
 }
 
-export function setActiveFeedbackSubscription(sub: BrowserFeedbackSubscription): void {
+export function setActiveFeedbackSubscription(
+	sub: BrowserFeedbackSubscription,
+): void {
 	_activeSubscription?.close();
 	_activeSubscription = sub;
 }

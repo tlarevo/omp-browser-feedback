@@ -31,7 +31,7 @@ describe("renderPopup", () => {
 		renderPopup(
 			root,
 			{ kind: "missing-auth", baseUrl: "http://127.0.0.1:4317" },
-			{ onSaveToken: token => (saved = token) },
+			{ onSaveToken: (token) => (saved = token) },
 		);
 
 		const input = root.querySelector("input");
@@ -78,7 +78,7 @@ describe("renderPopup", () => {
 					},
 				],
 			},
-			{ onStartPicker: sessionId => (picked = sessionId) },
+			{ onStartPicker: (sessionId) => (picked = sessionId) },
 		);
 
 		expect(root.textContent).toContain("Two · /repo/two · feature · idle");

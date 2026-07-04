@@ -10,7 +10,11 @@ chrome.runtime.onMessage.addListener(
 		sendResponse: (response: unknown) => void,
 	) => {
 		if (message.type === "omp:activate-picker") {
-			const { channelId, note } = message as { channelId: string; note?: string; type: string };
+			const { channelId, note } = message as {
+				channelId: string;
+				note?: string;
+				type: string;
+			};
 
 			// Cancel any existing active picker before starting a new one
 			if (activePickerHandle) {

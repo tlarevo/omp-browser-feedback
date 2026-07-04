@@ -12,7 +12,10 @@ import { isAuthorizedRequest } from "./auth";
 import { InMemoryFeedbackStore } from "./feedback-store";
 import { BrowserScreenshotStore } from "./screenshots";
 import { BrowserSessionRegistry } from "./session-registry";
-import { type BrowserBrokerSocketData, BrowserWebSocketRouter } from "./websocket";
+import {
+	type BrowserBrokerSocketData,
+	BrowserWebSocketRouter,
+} from "./websocket";
 
 export interface BrowserBrokerServerOptions {
 	host: string;
@@ -43,9 +46,13 @@ async function readJson(request: Request): Promise<unknown> {
 	return text.length > 0 ? JSON.parse(text) : {};
 }
 
-async function readFeedbackRequest(request: Request, screenshots: BrowserScreenshotStore): Promise<unknown> {
+async function readFeedbackRequest(
+	request: Request,
+	screenshots: BrowserScreenshotStore,
+): Promise<unknown> {
 	const contentType = request.headers.get("content-type") ?? "";
-	if (!contentType.includes("multipart/form-data")) return await readJson(request);
+	if (!contentType.includes("multipart/form-data"))
+		return await readJson(request);
 
 	const form = await request.formData();
 	const eventPart = form.get("event");
@@ -79,11 +86,13 @@ async function resolvePort(host: string, port: number): Promise<number> {
 		probe.listen(0, host, () => {
 			const address = probe.address();
 			if (!address || typeof address === "string") {
-				probe.close(() => reject(new Error("Unable to resolve available browser broker port")));
+				probe.close(() =>
+					reject(new Error("Unable to resolve available browser broker port")),
+				);
 				return;
 			}
 			const resolvedPort = address.port;
-			probe.close(error => {
+			probe.close((error) => {
 				if (error) reject(error);
 				else resolve(resolvedPort);
 			});
@@ -91,16 +100,21 @@ async function resolvePort(host: string, port: number): Promise<number> {
 	});
 }
 
-export async function createBrowserBrokerServer(options: BrowserBrokerServerOptions): Promise<BrowserBrokerServer> {
+export async function createBrowserBrokerServer(
+	options: BrowserBrokerServerOptions,
+): Promise<BrowserBrokerServer> {
 	if (options.host !== "127.0.0.1" && options.host !== "localhost") {
 		throw new Error("Browser broker only supports loopback hosts by default");
 	}
 
 	const registry = new BrowserSessionRegistry();
-	const feedback = new InMemoryFeedbackStore({ maxEventsPerChannel: options.maxEventsPerChannel ?? 50 });
+	const feedback = new InMemoryFeedbackStore({
+		maxEventsPerChannel: options.maxEventsPerChannel ?? 50,
+	});
 	const screenshots = new BrowserScreenshotStore({
 		rootDir: options.screenshotRootDir ?? "/tmp/omp-browser-screenshots",
-		maxBytes: options.maxScreenshotBytes ?? BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes,
+		maxBytes:
+			options.maxScreenshotBytes ?? BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes,
 	});
 	const websockets = new BrowserWebSocketRouter();
 	const port = await resolvePort(options.host, options.port);
@@ -121,7 +135,11 @@ export async function createBrowserBrokerServer(options: BrowserBrokerServerOpti
 						/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
 					if (!allowedOrigin) {
 						return jsonResponse(
-							{ ok: false, code: "forbidden", message: "Cross-origin WebSocket requests are not allowed" },
+							{
+								ok: false,
+								code: "forbidden",
+								message: "Cross-origin WebSocket requests are not allowed",
+							},
 							{ status: 403 },
 						);
 					}
@@ -129,7 +147,11 @@ export async function createBrowserBrokerServer(options: BrowserBrokerServerOpti
 				const token = url.searchParams.get("token");
 				if (token !== options.authToken) {
 					return jsonResponse(
-						{ ok: false, code: "unauthorized", message: "Missing or invalid bearer token" },
+						{
+							ok: false,
+							code: "unauthorized",
+							message: "Missing or invalid bearer token",
+						},
 						{ status: 401 },
 					);
 				}
@@ -137,7 +159,9 @@ export async function createBrowserBrokerServer(options: BrowserBrokerServerOpti
 				const upgraded: boolean = server.upgrade(request, {
 					data: { kind: "omp", sessionId },
 				});
-				return upgraded ? undefined : new Response("WebSocket upgrade required", { status: 426 });
+				return upgraded
+					? undefined
+					: new Response("WebSocket upgrade required", { status: 426 });
 			}
 
 			if (request.method === "GET" && url.pathname === "/api/health") {
@@ -150,7 +174,11 @@ export async function createBrowserBrokerServer(options: BrowserBrokerServerOpti
 
 			if (!isAuthorizedRequest(request, options.authToken)) {
 				return jsonResponse(
-					{ ok: false, code: "unauthorized", message: "Missing or invalid bearer token" },
+					{
+						ok: false,
+						code: "unauthorized",
+						message: "Missing or invalid bearer token",
+					},
 					{ status: 401 },
 				);
 			}
@@ -159,11 +187,20 @@ export async function createBrowserBrokerServer(options: BrowserBrokerServerOpti
 				return jsonResponse({ sessions: registry.list() });
 			}
 
-			if (request.method === "POST" && url.pathname === "/api/sessions/register") {
+			if (
+				request.method === "POST" &&
+				url.pathname === "/api/sessions/register"
+			) {
 				const result = validateSessionRegistration(await readJson(request));
 				if (!result.ok)
-					return jsonResponse({ ok: false, code: "invalid_session", message: result.error }, { status: 400 });
-				return jsonResponse({ ok: true, session: registry.register(result.value) });
+					return jsonResponse(
+						{ ok: false, code: "invalid_session", message: result.error },
+						{ status: 400 },
+					);
+				return jsonResponse({
+					ok: true,
+					session: registry.register(result.value),
+				});
 			}
 
 			const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
@@ -171,51 +208,94 @@ export async function createBrowserBrokerServer(options: BrowserBrokerServerOpti
 				const sessionId = decodeURIComponent(sessionMatch[1] ?? "");
 				const update = (await readJson(request)) as Record<string, unknown>;
 				const session = registry.update(sessionId, {
-					...(typeof update.displayName === "string" ? { displayName: update.displayName } : {}),
-					...(typeof update.sessionName === "string" ? { sessionName: update.sessionName } : {}),
+					...(typeof update.displayName === "string"
+						? { displayName: update.displayName }
+						: {}),
+					...(typeof update.sessionName === "string"
+						? { sessionName: update.sessionName }
+						: {}),
 					...(typeof update.cwd === "string" ? { cwd: update.cwd } : {}),
-					...(typeof update.projectName === "string" ? { projectName: update.projectName } : {}),
-					...(typeof update.gitBranch === "string" ? { gitBranch: update.gitBranch } : {}),
-					...(Array.isArray(update.urlPatterns) && update.urlPatterns.every(value => typeof value === "string")
+					...(typeof update.projectName === "string"
+						? { projectName: update.projectName }
+						: {}),
+					...(typeof update.gitBranch === "string"
+						? { gitBranch: update.gitBranch }
+						: {}),
+					...(Array.isArray(update.urlPatterns) &&
+					update.urlPatterns.every((value) => typeof value === "string")
 						? { urlPatterns: update.urlPatterns }
 						: {}),
-					...(update.status === "active" || update.status === "idle" || update.status === "disconnected"
+					...(update.status === "active" ||
+					update.status === "idle" ||
+					update.status === "disconnected"
 						? { status: update.status }
 						: {}),
-					...(typeof update.lastActiveAt === "string" ? { lastActiveAt: update.lastActiveAt } : {}),
-					...(typeof update.processId === "number" ? { processId: update.processId } : {}),
+					...(typeof update.lastActiveAt === "string"
+						? { lastActiveAt: update.lastActiveAt }
+						: {}),
+					...(typeof update.processId === "number"
+						? { processId: update.processId }
+						: {}),
 				});
 				if (!session)
-					return jsonResponse({ ok: false, code: "unknown_session", message: "Unknown session" }, { status: 404 });
+					return jsonResponse(
+						{ ok: false, code: "unknown_session", message: "Unknown session" },
+						{ status: 404 },
+					);
 				return jsonResponse({ ok: true, session });
 			}
 
 			if (sessionMatch && request.method === "DELETE") {
 				const sessionId = decodeURIComponent(sessionMatch[1] ?? "");
-				return jsonResponse({ ok: true, removed: registry.unregister(sessionId) });
+				return jsonResponse({
+					ok: true,
+					removed: registry.unregister(sessionId),
+				});
 			}
 
-			const sessionFeedbackMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/feedback(?:\/latest)?$/);
+			const sessionFeedbackMatch = url.pathname.match(
+				/^\/api\/sessions\/([^/]+)\/feedback(?:\/latest)?$/,
+			);
 			if (request.method === "GET" && sessionFeedbackMatch) {
-				const session = registry.getBySessionId(decodeURIComponent(sessionFeedbackMatch[1] ?? ""));
+				const session = registry.getBySessionId(
+					decodeURIComponent(sessionFeedbackMatch[1] ?? ""),
+				);
 				if (!session)
-					return jsonResponse({ ok: false, code: "unknown_session", message: "Unknown session" }, { status: 404 });
+					return jsonResponse(
+						{ ok: false, code: "unknown_session", message: "Unknown session" },
+						{ status: 404 },
+					);
 				if (url.pathname.endsWith("/latest"))
-					return jsonResponse({ feedback: feedback.latest(session.channelId) ?? null });
+					return jsonResponse({
+						feedback: feedback.latest(session.channelId) ?? null,
+					});
 				return jsonResponse({ feedback: feedback.list(session.channelId) });
 			}
 
 			if (request.method === "DELETE" && sessionFeedbackMatch) {
-				const session = registry.getBySessionId(decodeURIComponent(sessionFeedbackMatch[1] ?? ""));
+				const session = registry.getBySessionId(
+					decodeURIComponent(sessionFeedbackMatch[1] ?? ""),
+				);
 				if (!session)
-					return jsonResponse({ ok: false, code: "unknown_session", message: "Unknown session" }, { status: 404 });
-				return jsonResponse({ ok: true, cleared: feedback.clear(session.channelId) });
+					return jsonResponse(
+						{ ok: false, code: "unknown_session", message: "Unknown session" },
+						{ status: 404 },
+					);
+				return jsonResponse({
+					ok: true,
+					cleared: feedback.clear(session.channelId),
+				});
 			}
 
 			if (request.method === "POST" && url.pathname === "/api/feedback") {
-				const result = validateFeedbackEvent(await readFeedbackRequest(request, screenshots));
+				const result = validateFeedbackEvent(
+					await readFeedbackRequest(request, screenshots),
+				);
 				if (!result.ok)
-					return jsonResponse({ ok: false, code: "invalid_feedback", message: result.error }, { status: 400 });
+					return jsonResponse(
+						{ ok: false, code: "invalid_feedback", message: result.error },
+						{ status: 400 },
+					);
 				feedback.add({
 					channelId: result.value.channelId,
 					eventId: result.value.eventId,
@@ -227,7 +307,10 @@ export async function createBrowserBrokerServer(options: BrowserBrokerServerOpti
 				return jsonResponse({ ok: true, eventId: result.value.eventId });
 			}
 
-			return jsonResponse({ ok: false, code: "not_found", message: "Not found" }, { status: 404 });
+			return jsonResponse(
+				{ ok: false, code: "not_found", message: "Not found" },
+				{ status: 404 },
+			);
 		},
 		websocket: {
 			open(socket) {
@@ -235,7 +318,11 @@ export async function createBrowserBrokerServer(options: BrowserBrokerServerOpti
 				const session = registry.getBySessionId(socket.data.sessionId);
 				if (!session) return;
 				for (const event of feedback.list(session.channelId)) {
-					if (event.payload) websockets.sendFeedbackToSocket(socket, event.payload as BrowserFeedbackEvent);
+					if (event.payload)
+						websockets.sendFeedbackToSocket(
+							socket,
+							event.payload as BrowserFeedbackEvent,
+						);
 				}
 			},
 			close(socket) {

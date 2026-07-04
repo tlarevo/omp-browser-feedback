@@ -22,7 +22,10 @@ function createOverlayElement(document: Document): HTMLElement {
 	return overlay;
 }
 
-export function activatePicker(document: Document, callbacks: PickerCallbacks): PickerHandle {
+export function activatePicker(
+	document: Document,
+	callbacks: PickerCallbacks,
+): PickerHandle {
 	const overlay = createOverlayElement(document);
 	document.body.appendChild(overlay);
 	const originalCursor = document.body.style.cursor;
@@ -39,9 +42,13 @@ export function activatePicker(document: Document, callbacks: PickerCallbacks): 
 
 	document.addEventListener(
 		"mouseover",
-		event => {
+		(event) => {
 			const target = event.target;
-			if (!(target instanceof Element) || target.getAttribute("data-omp-picker-overlay") === "true") return;
+			if (
+				!(target instanceof Element) ||
+				target.getAttribute("data-omp-picker-overlay") === "true"
+			)
+				return;
 			current = target;
 			const rect = target.getBoundingClientRect();
 			Object.assign(overlay.style, {
@@ -66,7 +73,7 @@ export function activatePicker(document: Document, callbacks: PickerCallbacks): 
 
 	document.addEventListener(
 		"click",
-		event => {
+		(event) => {
 			event.preventDefault();
 			event.stopPropagation();
 			const selected = current;
@@ -82,7 +89,7 @@ export function activatePicker(document: Document, callbacks: PickerCallbacks): 
 
 	document.addEventListener(
 		"keydown",
-		event => {
+		(event) => {
 			if ("key" in event && (event as { key: string }).key === "Escape") {
 				deactivate();
 				callbacks.onCancel();

@@ -1,5 +1,8 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { BROWSER_BROKER_SERVICE, BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
+import {
+	BROWSER_BROKER_SERVICE,
+	BROWSER_PROTOCOL_VERSION,
+} from "@oh-my-pi/browser-protocol";
 import { createBrowserBrokerServer } from "../src/server";
 
 const servers: Array<{ stop: () => void }> = [];
@@ -15,7 +18,11 @@ afterEach(() => {
 
 describe("browser broker server", () => {
 	test("serves unauthenticated health with broker identity", async () => {
-		const server = await createBrowserBrokerServer({ host: "127.0.0.1", port: 0, authToken: "secret" });
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
 		servers.push(server);
 
 		const response = await fetch(`${server.baseUrl}/api/health`);
@@ -27,7 +34,11 @@ describe("browser broker server", () => {
 	});
 
 	test("rejects session listing without bearer auth", async () => {
-		const server = await createBrowserBrokerServer({ host: "127.0.0.1", port: 0, authToken: "secret" });
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
 		servers.push(server);
 
 		const response = await fetch(`${server.baseUrl}/api/sessions`);
@@ -36,9 +47,16 @@ describe("browser broker server", () => {
 	});
 
 	test("updates and unregisters sessions by stable session id", async () => {
-		const server = await createBrowserBrokerServer({ host: "127.0.0.1", port: 0, authToken: "secret" });
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
 		servers.push(server);
-		const headers = { Authorization: "Bearer secret", "Content-Type": "application/json" };
+		const headers = {
+			Authorization: "Bearer secret",
+			"Content-Type": "application/json",
+		};
 
 		await fetch(`${server.baseUrl}/api/sessions/register`, {
 			method: "POST",
@@ -63,24 +81,41 @@ describe("browser broker server", () => {
 		});
 		expect(patch.status).toBe(200);
 
-		const list = (await (await fetch(`${server.baseUrl}/api/sessions`, { headers })).json()) as {
+		const list = (await (
+			await fetch(`${server.baseUrl}/api/sessions`, { headers })
+		).json()) as {
 			sessions: Array<{ displayName: string; status: string }>;
 		};
-		expect(list.sessions[0]).toMatchObject({ displayName: "After", status: "idle" });
+		expect(list.sessions[0]).toMatchObject({
+			displayName: "After",
+			status: "idle",
+		});
 
-		const remove = await fetch(`${server.baseUrl}/api/sessions/ses_1`, { method: "DELETE", headers });
+		const remove = await fetch(`${server.baseUrl}/api/sessions/ses_1`, {
+			method: "DELETE",
+			headers,
+		});
 		expect(remove.status).toBe(200);
 
-		const afterRemove = (await (await fetch(`${server.baseUrl}/api/sessions`, { headers })).json()) as {
+		const afterRemove = (await (
+			await fetch(`${server.baseUrl}/api/sessions`, { headers })
+		).json()) as {
 			sessions: unknown[];
 		};
 		expect(afterRemove.sessions).toEqual([]);
 	});
 
 	test("accepts multipart feedback with screenshot binary", async () => {
-		const server = await createBrowserBrokerServer({ host: "127.0.0.1", port: 0, authToken: "secret" });
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
 		servers.push(server);
-		const headers = { Authorization: "Bearer secret", "Content-Type": "application/json" };
+		const headers = {
+			Authorization: "Bearer secret",
+			"Content-Type": "application/json",
+		};
 
 		await fetch(`${server.baseUrl}/api/sessions/register`, {
 			method: "POST",
@@ -129,7 +164,11 @@ describe("browser broker server", () => {
 				},
 			}),
 		);
-		form.set("screenshot", new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }), "capture.png");
+		form.set(
+			"screenshot",
+			new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
+			"capture.png",
+		);
 
 		const response = await fetch(`${server.baseUrl}/api/feedback`, {
 			method: "POST",
@@ -139,10 +178,14 @@ describe("browser broker server", () => {
 
 		expect(response.status).toBe(200);
 		const latest = (await (
-			await fetch(`${server.baseUrl}/api/sessions/ses_1/feedback/latest`, { headers })
+			await fetch(`${server.baseUrl}/api/sessions/ses_1/feedback/latest`, {
+				headers,
+			})
 		).json()) as {
 			feedback: { payload: { screenshot: { ref: string } } };
 		};
-		expect(latest.feedback.payload.screenshot.ref).toBe("screenshots/evt_1.png");
+		expect(latest.feedback.payload.screenshot.ref).toBe(
+			"screenshots/evt_1.png",
+		);
 	});
 });

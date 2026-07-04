@@ -7,11 +7,11 @@
 	"license": "MIT",
 	"scripts": {
 		"build": "bun build src/background-entry.ts src/content-entry.ts src/popup/app.ts --outdir dist --target browser",
-		"check": "biome check . && bun run check:types",
+		"check": "biome check src test manifest.json package.json tsconfig.json && bun run check:types",
 		"check:types": "tsgo -p tsconfig.json --noEmit",
-		"lint": "biome lint .",
-		"fix": "biome check --write --unsafe .",
-		"fmt": "biome format --write .",
+		"lint": "biome lint src test manifest.json package.json tsconfig.json",
+		"fix": "biome check --write --unsafe src test manifest.json package.json tsconfig.json",
+		"fmt": "biome format --write src test manifest.json package.json tsconfig.json",
 		"test": "bun test --parallel"
 	},
 	"dependencies": {
@@ -21,6 +21,7 @@
 	"devDependencies": {
 		"@oh-my-pi/browser-broker": "workspace:*",
 		"@types/bun": "catalog:",
+		"@types/chrome": "catalog:",
 		"playwright": "^1.50.0"
 	},
 	"engines": {

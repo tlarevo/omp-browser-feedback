@@ -40,7 +40,12 @@ export async function captureAndCrop(
 
 	if (sw <= 0 || sh <= 0) {
 		if (fullBlob.size > MAX_BLOB_BYTES) return undefined;
-		return { blob: fullBlob, width: imgW, height: imgH, kind: "full-visible-tab" };
+		return {
+			blob: fullBlob,
+			width: imgW,
+			height: imgH,
+			kind: "full-visible-tab",
+		};
 	}
 
 	const croppedBitmap = await createImageBitmap(fullBlob, sx, sy, sw, sh);
@@ -50,7 +55,12 @@ export async function captureAndCrop(
 	if (!ctx) {
 		croppedBitmap.close();
 		if (fullBlob.size > MAX_BLOB_BYTES) return undefined;
-		return { blob: fullBlob, width: imgW, height: imgH, kind: "full-visible-tab" };
+		return {
+			blob: fullBlob,
+			width: imgW,
+			height: imgH,
+			kind: "full-visible-tab",
+		};
 	}
 
 	ctx.drawImage(croppedBitmap, 0, 0);
@@ -60,7 +70,12 @@ export async function captureAndCrop(
 
 	if (croppedBlob.size > MAX_BLOB_BYTES) {
 		if (fullBlob.size > MAX_BLOB_BYTES) return undefined;
-		return { blob: fullBlob, width: imgW, height: imgH, kind: "full-visible-tab" };
+		return {
+			blob: fullBlob,
+			width: imgW,
+			height: imgH,
+			kind: "full-visible-tab",
+		};
 	}
 
 	return { blob: croppedBlob, width: sw, height: sh, kind: "crop" };

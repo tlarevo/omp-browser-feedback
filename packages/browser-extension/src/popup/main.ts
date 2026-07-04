@@ -18,7 +18,12 @@ export type PopupState =
 	| { kind: "no-broker"; attemptedPorts: number[] }
 	| { kind: "missing-auth"; baseUrl: string }
 	| { kind: "no-sessions"; baseUrl: string }
-	| { kind: "ready"; baseUrl: string; selectedSessionId?: string; sessions: BrowserSessionRegistration[] }
+	| {
+			kind: "ready";
+			baseUrl: string;
+			selectedSessionId?: string;
+			sessions: BrowserSessionRegistration[];
+	  }
 	| { kind: "error"; message: string };
 
 export interface PopupActionHandlers {
@@ -31,7 +36,11 @@ function clear(element: HTMLElement): void {
 	element.replaceChildren();
 }
 
-function createButton(document: Document, label: string, onClick?: () => void): HTMLButtonElement {
+function createButton(
+	document: Document,
+	label: string,
+	onClick?: () => void,
+): HTMLButtonElement {
 	const button = document.createElement("button");
 	button.type = "button";
 	button.textContent = label;
@@ -39,34 +48,56 @@ function createButton(document: Document, label: string, onClick?: () => void): 
 	return button;
 }
 
-function appendStatus(document: Document, root: HTMLElement, text: string): void {
+function appendStatus(
+	document: Document,
+	root: HTMLElement,
+	text: string,
+): void {
 	const paragraph = document.createElement("p");
 	paragraph.textContent = text;
 	root.append(paragraph);
 }
 
-export function renderPopup(root: HTMLElement, state: PopupState, handlers: PopupActionHandlers = {}): void {
+export function renderPopup(
+	root: HTMLElement,
+	state: PopupState,
+	handlers: PopupActionHandlers = {},
+): void {
 	clear(root);
 	const document = root.ownerDocument;
 
 	if (state.kind === "no-broker") {
-		appendStatus(document, root, `No OMP browser broker found on ports ${state.attemptedPorts.join(", ")}.`);
+		appendStatus(
+			document,
+			root,
+			`No OMP browser broker found on ports ${state.attemptedPorts.join(", ")}.`,
+		);
 		return;
 	}
 
 	if (state.kind === "missing-auth") {
-		appendStatus(document, root, `Broker found at ${state.baseUrl}. Paste the local auth token to continue.`);
+		appendStatus(
+			document,
+			root,
+			`Broker found at ${state.baseUrl}. Paste the local auth token to continue.`,
+		);
 		const input = document.createElement("input");
 		input.type = "password";
 		input.autocomplete = "off";
 		input.placeholder = "Auth token";
-		const button = createButton(document, "Save", () => handlers.onSaveToken?.(input.value));
+		const button = createButton(document, "Save", () =>
+			handlers.onSaveToken?.(input.value),
+		);
 		root.append(input, button);
 		return;
 	}
 
 	if (state.kind === "no-sessions") {
-		appendStatus(document, root, `Connected to ${state.baseUrl}. No active OMP sessions.`);
+		appendStatus(
+			document,
+			root,
+			`Connected to ${state.baseUrl}. No active OMP sessions.`,
+		);
 		return;
 	}
 
@@ -84,7 +115,9 @@ export function renderPopup(root: HTMLElement, state: PopupState, handlers: Popu
 		input.name = "session";
 		input.value = session.sessionId;
 		input.checked = session.sessionId === state.selectedSessionId;
-		input.addEventListener("change", () => handlers.onSelectSession?.(session.sessionId));
+		input.addEventListener("change", () =>
+			handlers.onSelectSession?.(session.sessionId),
+		);
 		label.append(input, document.createTextNode(renderSessionLabel(session)));
 		item.append(label);
 		list.append(item);
@@ -92,17 +125,23 @@ export function renderPopup(root: HTMLElement, state: PopupState, handlers: Popu
 	root.append(list);
 
 	const noteArea = document.createElement("textarea");
-	noteArea.placeholder = "Optional note — e.g. 'Change the button color to blue'";
+	noteArea.placeholder =
+		"Optional note — e.g. 'Change the button color to blue'";
 	noteArea.rows = 2;
 
-	const activeSessionId = state.selectedSessionId ?? state.sessions[0]?.sessionId;
+	const activeSessionId =
+		state.selectedSessionId ?? state.sessions[0]?.sessionId;
 	root.append(
 		noteArea,
 		createButton(
 			document,
 			"Pick element",
 			activeSessionId
-				? () => handlers.onStartPicker?.(activeSessionId, noteArea.value.trim() || undefined)
+				? () =>
+						handlers.onStartPicker?.(
+							activeSessionId,
+							noteArea.value.trim() || undefined,
+						)
 				: undefined,
 		),
 	);

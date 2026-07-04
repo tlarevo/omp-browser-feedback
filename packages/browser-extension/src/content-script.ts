@@ -4,8 +4,8 @@ import {
 	type BrowserFeedbackEvent,
 	type BrowserPageContext,
 } from "@oh-my-pi/browser-protocol";
-import { generateSelector } from "./picker/selectors";
 import { activatePicker, type PickerHandle } from "./picker/overlay";
+import { generateSelector } from "./picker/selectors";
 
 export type { PickerHandle };
 
@@ -29,7 +29,14 @@ export interface DomSelectionFeedbackInput {
 	window?: Window;
 }
 
-const DEFAULT_STYLE_PROPERTIES = ["display", "position", "color", "background-color", "font-size", "font-weight"];
+const DEFAULT_STYLE_PROPERTIES = [
+	"display",
+	"position",
+	"color",
+	"background-color",
+	"font-size",
+	"font-weight",
+];
 
 export function summarizePickedElement(element: Element): PickedElementSummary {
 	const text = element.textContent?.trim();
@@ -52,7 +59,10 @@ export function capturePageContext(win: Window = window): BrowserPageContext {
 	};
 }
 
-export function captureElementContext(element: Element, options: ElementCaptureOptions = {}): BrowserElementContext {
+export function captureElementContext(
+	element: Element,
+	options: ElementCaptureOptions = {},
+): BrowserElementContext {
 	const win = options.window ?? window;
 	const bounds = element.getBoundingClientRect();
 	const attributes: Record<string, string> = {};
@@ -83,7 +93,9 @@ export function captureElementContext(element: Element, options: ElementCaptureO
 	};
 }
 
-export function buildDomSelectionFeedback(input: DomSelectionFeedbackInput): BrowserFeedbackEvent {
+export function buildDomSelectionFeedback(
+	input: DomSelectionFeedbackInput,
+): BrowserFeedbackEvent {
 	const win = input.window ?? window;
 	return {
 		protocolVersion: BROWSER_PROTOCOL_VERSION,
@@ -103,7 +115,9 @@ export interface PickerCaptureInput {
 	window?: Window;
 }
 
-export type PickerCaptureCallback = (event: BrowserFeedbackEvent | null) => void;
+export type PickerCaptureCallback = (
+	event: BrowserFeedbackEvent | null,
+) => void;
 
 export function activatePickerAndCapture(
 	document: Document,

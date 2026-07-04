@@ -1,6 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { BROWSER_BROKER_SERVICE, BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
-import { discoverBroker, listSessions, submitFeedback } from "../src/background";
+import {
+	BROWSER_BROKER_SERVICE,
+	BROWSER_PROTOCOL_VERSION,
+} from "@oh-my-pi/browser-protocol";
+import {
+	discoverBroker,
+	listSessions,
+	submitFeedback,
+} from "../src/background";
 
 describe("extension broker discovery", () => {
 	test("scans candidate ports until it finds a compatible broker", async () => {
@@ -8,7 +15,7 @@ describe("extension broker discovery", () => {
 		const broker = await discoverBroker({
 			host: "127.0.0.1",
 			ports: [4317, 4318],
-			fetch: async url => {
+			fetch: async (url) => {
 				requests.push(String(url));
 				if (String(url).includes(":4318/")) {
 					return Response.json({
@@ -21,8 +28,15 @@ describe("extension broker discovery", () => {
 			},
 		});
 
-		expect(broker).toEqual({ baseUrl: "http://127.0.0.1:4318", brokerId: "broker", port: 4318 });
-		expect(requests).toEqual(["http://127.0.0.1:4317/api/health", "http://127.0.0.1:4318/api/health"]);
+		expect(broker).toEqual({
+			baseUrl: "http://127.0.0.1:4318",
+			brokerId: "broker",
+			port: 4318,
+		});
+		expect(requests).toEqual([
+			"http://127.0.0.1:4317/api/health",
+			"http://127.0.0.1:4318/api/health",
+		]);
 	});
 });
 
@@ -94,6 +108,6 @@ describe("extension session listing", () => {
 		});
 
 		expect(captured?.headers).toEqual({ Authorization: "Bearer secret" });
-		expect(sessions.map(session => session.sessionId)).toEqual(["ses_1"]);
+		expect(sessions.map((session) => session.sessionId)).toEqual(["ses_1"]);
 	});
 });

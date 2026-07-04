@@ -35,7 +35,9 @@ export class BrowserScreenshotStore {
 		this.#maxBytes = options.maxBytes;
 	}
 
-	async save(input: BrowserScreenshotSaveInput): Promise<BrowserScreenshotSaveResult> {
+	async save(
+		input: BrowserScreenshotSaveInput,
+	): Promise<BrowserScreenshotSaveResult> {
 		if (input.bytes.byteLength > this.#maxBytes) {
 			throw new Error(`Screenshot exceeds ${this.#maxBytes} byte limit`);
 		}

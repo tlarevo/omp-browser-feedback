@@ -6,7 +6,11 @@ import {
 	BROWSER_PROTOCOL_VERSION,
 	type BrowserProtocolVersion,
 } from "@oh-my-pi/browser-protocol";
-import { DEFAULT_BROWSER_BROKER_PORT_RANGE, parsePortRange, portsInRange } from "./ports";
+import {
+	DEFAULT_BROWSER_BROKER_PORT_RANGE,
+	parsePortRange,
+	portsInRange,
+} from "./ports";
 
 export interface BrowserBrokerDiscovery {
 	protocol_version: BrowserProtocolVersion;
@@ -25,7 +29,10 @@ export interface BrokerPortOptions {
 	portRange?: string;
 }
 
-export type BrokerDiscoveryFetch = (url: string | URL | Request, init?: RequestInit) => Promise<Response>;
+export type BrokerDiscoveryFetch = (
+	url: string | URL | Request,
+	init?: RequestInit,
+) => Promise<Response>;
 
 export interface DiscoverCompatibleBrokerOptions {
 	host: string;
@@ -45,7 +52,9 @@ export function defaultDiscoveryPath(): string {
 
 export function resolveBrokerPorts(options: BrokerPortOptions = {}): number[] {
 	if (options.port !== undefined) return [options.port];
-	return portsInRange(parsePortRange(options.portRange ?? DEFAULT_BROWSER_BROKER_PORT_RANGE));
+	return portsInRange(
+		parsePortRange(options.portRange ?? DEFAULT_BROWSER_BROKER_PORT_RANGE),
+	);
 }
 
 export async function discoverCompatibleBroker(
@@ -55,7 +64,9 @@ export async function discoverCompatibleBroker(
 	for (const port of options.ports) {
 		const baseUrl = `http://${options.host}:${port}`;
 		try {
-			const response = await fetchImpl(`${baseUrl}/api/health`, { signal: AbortSignal.timeout(250) });
+			const response = await fetchImpl(`${baseUrl}/api/health`, {
+				signal: AbortSignal.timeout(250),
+			});
 			if (!response.ok) continue;
 			const body = (await response.json()) as {
 				service?: string;
@@ -71,17 +82,28 @@ export async function discoverCompatibleBroker(
 	return undefined;
 }
 
-export async function writeDiscoveryFile(filePath: string, discovery: BrowserBrokerDiscovery): Promise<void> {
+export async function writeDiscoveryFile(
+	filePath: string,
+	discovery: BrowserBrokerDiscovery,
+): Promise<void> {
 	await fs.mkdir(path.dirname(filePath), { recursive: true, mode: 0o700 });
 	await Bun.write(filePath, JSON.stringify(discovery, null, 2));
 	await fs.chmod(filePath, 0o600);
 }
 
-export async function readDiscoveryFile(filePath: string): Promise<BrowserBrokerDiscovery | undefined> {
+export async function readDiscoveryFile(
+	filePath: string,
+): Promise<BrowserBrokerDiscovery | undefined> {
 	try {
 		return (await Bun.file(filePath).json()) as BrowserBrokerDiscovery;
 	} catch (error) {
-		if (error && typeof error === "object" && "code" in error && error.code === "ENOENT") return undefined;
+		if (
+			error &&
+			typeof error === "object" &&
+			"code" in error &&
+			error.code === "ENOENT"
+		)
+			return undefined;
 		throw error;
 	}
 }

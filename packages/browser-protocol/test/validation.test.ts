@@ -1,5 +1,9 @@
 import { describe, expect, test } from "bun:test";
-import { BROWSER_PROTOCOL_VERSION, validateFeedbackEvent, validateSessionRegistration } from "../src";
+import {
+	BROWSER_PROTOCOL_VERSION,
+	validateFeedbackEvent,
+	validateSessionRegistration,
+} from "../src";
 
 describe("browser protocol validation", () => {
 	test("accepts a valid session registration", () => {

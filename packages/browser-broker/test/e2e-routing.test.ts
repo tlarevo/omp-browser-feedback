@@ -52,7 +52,11 @@ function feedback(channelId: string, eventId: string) {
 
 describe("browser broker e2e routing", () => {
 	test("routes duplicate-name session feedback by stable session id", async () => {
-		const server = await createBrowserBrokerServer({ host: "127.0.0.1", port: 0, authToken: "secret" });
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
 		servers.push(server);
 
 		await fetch(`${server.baseUrl}/api/sessions/register`, {
@@ -77,12 +81,16 @@ describe("browser broker e2e routing", () => {
 		});
 
 		const latestA = (await (
-			await fetch(`${server.baseUrl}/api/sessions/a/feedback/latest`, { headers: authHeaders })
+			await fetch(`${server.baseUrl}/api/sessions/a/feedback/latest`, {
+				headers: authHeaders,
+			})
 		).json()) as {
 			feedback: { eventId: string };
 		};
 		const latestB = (await (
-			await fetch(`${server.baseUrl}/api/sessions/b/feedback/latest`, { headers: authHeaders })
+			await fetch(`${server.baseUrl}/api/sessions/b/feedback/latest`, {
+				headers: authHeaders,
+			})
 		).json()) as {
 			feedback: { eventId: string };
 		};

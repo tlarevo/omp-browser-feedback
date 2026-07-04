@@ -52,20 +52,27 @@ function feedback() {
 
 describe("browser broker websocket security", () => {
 	test("rejects WebSocket upgrade from a non-local Origin header", async () => {
-		const server = await createBrowserBrokerServer({ host: "127.0.0.1", port: 0, authToken: "secret" });
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
 		servers.push(server);
 
 		const wsUrl = `${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`;
 		const rejected = await new Promise<boolean>((resolve, reject) => {
 			const ws = new WebSocket(wsUrl, {
 				headers: { Origin: "https://evil.example.com" },
-			} as ConstructorParameters<typeof WebSocket>[1]);
-			const timer = setTimeout(() => reject(new Error("Timed out waiting for WS rejection")), 2_000);
+			} as unknown as ConstructorParameters<typeof WebSocket>[1]);
+			const timer = setTimeout(
+				() => reject(new Error("Timed out waiting for WS rejection")),
+				2_000,
+			);
 			ws.onerror = () => {
 				clearTimeout(timer);
 				resolve(true);
 			};
-			ws.onclose = event => {
+			ws.onclose = (event) => {
 				clearTimeout(timer);
 				resolve(!event.wasClean || event.code !== 1000);
 			};
@@ -74,7 +81,11 @@ describe("browser broker websocket security", () => {
 	});
 
 	test("allows WebSocket upgrade from a chrome-extension Origin", async () => {
-		const server = await createBrowserBrokerServer({ host: "127.0.0.1", port: 0, authToken: "secret" });
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
 		servers.push(server);
 
 		await fetch(`${server.baseUrl}/api/sessions/register`, {
@@ -82,37 +93,50 @@ describe("browser broker websocket security", () => {
 			headers,
 			body: JSON.stringify(registration()),
 		});
-
-		const message = await new Promise<Record<string, unknown>>((resolve, reject) => {
-			const wsUrl = `${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`;
-			const ws = new WebSocket(wsUrl, {
-				headers: { Origin: "chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef" },
-			} as ConstructorParameters<typeof WebSocket>[1]);
-			const timer = setTimeout(() => reject(new Error("Timed out waiting for chrome-extension WS message")), 2_000);
-			ws.onmessage = event => {
-				clearTimeout(timer);
-				ws.close();
-				resolve(JSON.parse(String(event.data)) as Record<string, unknown>);
-			};
-			ws.onerror = () => {
-				clearTimeout(timer);
-				reject(new Error("WS errored with chrome-extension origin"));
-			};
-			ws.onopen = () => {
-				void fetch(`${server.baseUrl}/api/feedback`, {
-					method: "POST",
-					headers,
-					body: JSON.stringify(feedback()),
-				});
-			};
-		});
+		const message = await new Promise<Record<string, unknown>>(
+			(resolve, reject) => {
+				const wsUrl = `${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`;
+				const ws = new WebSocket(wsUrl, {
+					headers: {
+						Origin: "chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef",
+					},
+				} as unknown as ConstructorParameters<typeof WebSocket>[1]);
+				const timer = setTimeout(
+					() =>
+						reject(
+							new Error("Timed out waiting for chrome-extension WS message"),
+						),
+					2_000,
+				);
+				ws.onmessage = (event) => {
+					clearTimeout(timer);
+					ws.close();
+					resolve(JSON.parse(String(event.data)) as Record<string, unknown>);
+				};
+				ws.onerror = () => {
+					clearTimeout(timer);
+					reject(new Error("WS errored with chrome-extension origin"));
+				};
+				ws.onopen = () => {
+					void fetch(`${server.baseUrl}/api/feedback`, {
+						method: "POST",
+						headers,
+						body: JSON.stringify(feedback()),
+					});
+				};
+			},
+		);
 		expect(message).toMatchObject({ type: "browser.feedback" });
 	});
 });
 
 describe("browser broker websocket routing", () => {
 	test("pushes submitted feedback to a connected OMP session socket", async () => {
-		const server = await createBrowserBrokerServer({ host: "127.0.0.1", port: 0, authToken: "secret" });
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
 		servers.push(server);
 
 		await fetch(`${server.baseUrl}/api/sessions/register`, {
@@ -121,26 +145,36 @@ describe("browser broker websocket routing", () => {
 			body: JSON.stringify(registration()),
 		});
 
-		const message = await new Promise<Record<string, unknown>>((resolve, reject) => {
-			const ws = new WebSocket(`${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`);
-			const timer = setTimeout(() => reject(new Error("Timed out waiting for broker websocket feedback")), 2_000);
-			ws.onmessage = event => {
-				clearTimeout(timer);
-				ws.close();
-				resolve(JSON.parse(String(event.data)) as Record<string, unknown>);
-			};
-			ws.onerror = () => {
-				clearTimeout(timer);
-				reject(new Error("Broker websocket errored"));
-			};
-			ws.onopen = () => {
-				void fetch(`${server.baseUrl}/api/feedback`, {
-					method: "POST",
-					headers,
-					body: JSON.stringify(feedback()),
-				});
-			};
-		});
+		const message = await new Promise<Record<string, unknown>>(
+			(resolve, reject) => {
+				const ws = new WebSocket(
+					`${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`,
+				);
+				const timer = setTimeout(
+					() =>
+						reject(
+							new Error("Timed out waiting for broker websocket feedback"),
+						),
+					2_000,
+				);
+				ws.onmessage = (event) => {
+					clearTimeout(timer);
+					ws.close();
+					resolve(JSON.parse(String(event.data)) as Record<string, unknown>);
+				};
+				ws.onerror = () => {
+					clearTimeout(timer);
+					reject(new Error("Broker websocket errored"));
+				};
+				ws.onopen = () => {
+					void fetch(`${server.baseUrl}/api/feedback`, {
+						method: "POST",
+						headers,
+						body: JSON.stringify(feedback()),
+					});
+				};
+			},
+		);
 
 		expect(message).toMatchObject({
 			type: "browser.feedback",
@@ -149,7 +183,11 @@ describe("browser broker websocket routing", () => {
 	});
 
 	test("replays stored feedback when an OMP session socket connects", async () => {
-		const server = await createBrowserBrokerServer({ host: "127.0.0.1", port: 0, authToken: "secret" });
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
 		servers.push(server);
 
 		await fetch(`${server.baseUrl}/api/sessions/register`, {
@@ -163,19 +201,27 @@ describe("browser broker websocket routing", () => {
 			body: JSON.stringify(feedback()),
 		});
 
-		const message = await new Promise<Record<string, unknown>>((resolve, reject) => {
-			const ws = new WebSocket(`${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`);
-			const timer = setTimeout(() => reject(new Error("Timed out waiting for replayed broker feedback")), 2_000);
-			ws.onmessage = event => {
-				clearTimeout(timer);
-				ws.close();
-				resolve(JSON.parse(String(event.data)) as Record<string, unknown>);
-			};
-			ws.onerror = () => {
-				clearTimeout(timer);
-				reject(new Error("Broker websocket errored"));
-			};
-		});
+		const message = await new Promise<Record<string, unknown>>(
+			(resolve, reject) => {
+				const ws = new WebSocket(
+					`${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`,
+				);
+				const timer = setTimeout(
+					() =>
+						reject(new Error("Timed out waiting for replayed broker feedback")),
+					2_000,
+				);
+				ws.onmessage = (event) => {
+					clearTimeout(timer);
+					ws.close();
+					resolve(JSON.parse(String(event.data)) as Record<string, unknown>);
+				};
+				ws.onerror = () => {
+					clearTimeout(timer);
+					reject(new Error("Broker websocket errored"));
+				};
+			},
+		);
 
 		expect(message).toMatchObject({
 			type: "browser.feedback",

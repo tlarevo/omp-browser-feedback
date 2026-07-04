@@ -1,4 +1,11 @@
-const PREFERRED_ATTRIBUTES = ["data-testid", "data-test", "aria-label", "name", "type", "href"] as const;
+const PREFERRED_ATTRIBUTES = [
+	"data-testid",
+	"data-test",
+	"aria-label",
+	"name",
+	"type",
+	"href",
+] as const;
 
 function cssEscape(value: string): string {
 	if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(value);

@@ -3,7 +3,9 @@ import { BrowserSessionRegistry } from "../src";
 
 describe("BrowserSessionRegistry", () => {
 	test("keeps duplicate display names routable by stable ids", () => {
-		const registry = new BrowserSessionRegistry({ now: () => "2026-06-27T10:00:00.000Z" });
+		const registry = new BrowserSessionRegistry({
+			now: () => "2026-06-27T10:00:00.000Z",
+		});
 
 		registry.register({
 			protocolVersion: 1,

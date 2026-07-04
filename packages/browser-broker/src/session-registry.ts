@@ -1,4 +1,7 @@
-import type { BrowserSessionRegistration, BrowserSessionStatus } from "@oh-my-pi/browser-protocol";
+import type {
+	BrowserSessionRegistration,
+	BrowserSessionStatus,
+} from "@oh-my-pi/browser-protocol";
 
 export interface BrowserSessionRegistryOptions {
 	now?: () => string;
@@ -41,7 +44,10 @@ export class BrowserSessionRegistry {
 		return record;
 	}
 
-	update(sessionId: string, update: BrowserSessionUpdate): BrowserSessionRecord | undefined {
+	update(
+		sessionId: string,
+		update: BrowserSessionUpdate,
+	): BrowserSessionRecord | undefined {
 		const existing = this.#sessions.get(sessionId);
 		if (!existing) return undefined;
 		const record: BrowserSessionRecord = {
@@ -73,6 +79,8 @@ export class BrowserSessionRegistry {
 	}
 
 	list(): BrowserSessionRecord[] {
-		return [...this.#sessions.values()].sort((left, right) => right.lastActiveAt.localeCompare(left.lastActiveAt));
+		return [...this.#sessions.values()].sort((left, right) =>
+			right.lastActiveAt.localeCompare(left.lastActiveAt),
+		);
 	}
 }

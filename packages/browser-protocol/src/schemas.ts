@@ -3,7 +3,9 @@ import { BROWSER_PROTOCOL_VERSION } from "./version";
 
 const nonEmptyString = type("string").atLeastLength(1);
 
-export const browserSessionStatusSchema = type("'active' | 'idle' | 'disconnected'");
+export const browserSessionStatusSchema = type(
+	"'active' | 'idle' | 'disconnected'",
+);
 
 export const browserSessionRegistrationSchema = type({
 	"+": "reject",
@@ -99,4 +101,6 @@ export const pageScreenshotFeedbackSchema = type({
 	screenshot: screenshotSchema,
 });
 
-export const browserFeedbackEventSchema = domSelectionFeedbackSchema.or(pageScreenshotFeedbackSchema);
+export const browserFeedbackEventSchema = domSelectionFeedbackSchema.or(
+	pageScreenshotFeedbackSchema,
+);

@@ -12,7 +12,10 @@ function domWithButton() {
 describe("activatePicker", () => {
 	test("returns a handle with deactivate method", () => {
 		const { document } = domWithButton();
-		const handle = activatePicker(document, { onSelect: () => {}, onCancel: () => {} });
+		const handle = activatePicker(document, {
+			onSelect: () => {},
+			onCancel: () => {},
+		});
 		expect(typeof handle.deactivate).toBe("function");
 		handle.deactivate();
 	});
@@ -23,12 +26,18 @@ describe("activatePicker", () => {
 		const overlay = document.querySelector("[data-omp-picker-overlay]");
 		expect(overlay).not.toBeNull();
 		// Clean up
-		activatePicker(document, { onSelect: () => {}, onCancel: () => {} }).deactivate();
+		activatePicker(document, {
+			onSelect: () => {},
+			onCancel: () => {},
+		}).deactivate();
 	});
 
 	test("removes the overlay when deactivate is called", () => {
 		const { document } = domWithButton();
-		const handle = activatePicker(document, { onSelect: () => {}, onCancel: () => {} });
+		const handle = activatePicker(document, {
+			onSelect: () => {},
+			onCancel: () => {},
+		});
 		expect(document.querySelector("[data-omp-picker-overlay]")).not.toBeNull();
 		handle.deactivate();
 		expect(document.querySelector("[data-omp-picker-overlay]")).toBeNull();
@@ -37,7 +46,10 @@ describe("activatePicker", () => {
 	test("sets crosshair cursor on activation and restores it on deactivate", () => {
 		const { document } = domWithButton();
 		const original = document.body.style.cursor;
-		const handle = activatePicker(document, { onSelect: () => {}, onCancel: () => {} });
+		const handle = activatePicker(document, {
+			onSelect: () => {},
+			onCancel: () => {},
+		});
 		expect(document.body.style.cursor).toBe("crosshair");
 		handle.deactivate();
 		expect(document.body.style.cursor).toBe(original);
@@ -45,7 +57,10 @@ describe("activatePicker", () => {
 
 	test("second deactivate is a no-op (AbortController is idempotent)", () => {
 		const { document } = domWithButton();
-		const handle = activatePicker(document, { onSelect: () => {}, onCancel: () => {} });
+		const handle = activatePicker(document, {
+			onSelect: () => {},
+			onCancel: () => {},
+		});
 		handle.deactivate();
 		expect(() => handle.deactivate()).not.toThrow();
 	});

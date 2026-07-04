@@ -1,10 +1,17 @@
 import type { BrowserFeedbackEvent } from "@oh-my-pi/browser-protocol";
-import type { ExtensionAPI, ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ExtensionCommandContext,
+} from "@oh-my-pi/pi-coding-agent";
+import {
+	ensureBrokerRunning,
+	setActiveFeedbackSubscription,
+	stopActiveBroker,
+} from "./broker-lifecycle";
 import { BrowserBrokerClient } from "./client";
-import { ensureBrokerRunning, setActiveFeedbackSubscription, stopActiveBroker } from "./broker-lifecycle";
-import { formatFeedbackAsPrompt } from "./renderer";
-import { readConfig } from "./config";
 import { handleBfCommand } from "./commands";
+import { readConfig } from "./config";
+import { formatFeedbackAsPrompt } from "./renderer";
 
 export type OnFeedbackFn = (event: BrowserFeedbackEvent) => void;
 
@@ -21,7 +28,10 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 				pi.sendUserMessage(prompt);
 			} else if (_capturedCtx) {
 				_capturedCtx.ui.setEditorText(prompt);
-				_capturedCtx.ui.notify("Browser feedback ready — review and press Enter", "info");
+				_capturedCtx.ui.notify(
+					"Browser feedback ready — review and press Enter",
+					"info",
+				);
 			} else {
 				pi.sendUserMessage(prompt);
 			}
@@ -35,7 +45,10 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 			const result = await ensureBrokerRunning();
 			const sessionId = ctx.sessionManager.getSessionId();
 			const sessionName = ctx.sessionManager.getSessionName() ?? sessionId;
-			const client = new BrowserBrokerClient({ baseUrl: result.baseUrl, authToken: result.authToken });
+			const client = new BrowserBrokerClient({
+				baseUrl: result.baseUrl,
+				authToken: result.authToken,
+			});
 			await client.registerSession({
 				sessionId,
 				sessionName,
@@ -62,10 +75,23 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 
 	pi.registerCommand("bf", {
 		description: "Manage browser DOM feedback from the Chrome extension",
-		getArgumentCompletions: prefix => {
-			const subs = ["connect", "disconnect", "status", "broker", "latest", "list", "use", "clear", "rename", "settings"];
-			if (!prefix) return subs.map(s => ({ label: s, value: s }));
-			return subs.filter(s => s.startsWith(prefix)).map(s => ({ label: s, value: s }));
+		getArgumentCompletions: (prefix) => {
+			const subs = [
+				"connect",
+				"disconnect",
+				"status",
+				"broker",
+				"latest",
+				"list",
+				"use",
+				"clear",
+				"rename",
+				"settings",
+			];
+			if (!prefix) return subs.map((s) => ({ label: s, value: s }));
+			return subs
+				.filter((s) => s.startsWith(prefix))
+				.map((s) => ({ label: s, value: s }));
 		},
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			_capturedCtx = ctx;

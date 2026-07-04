@@ -24,7 +24,9 @@ describe("BrowserScreenshotStore", () => {
 		});
 
 		expect(saved.ref).toBe("screenshots/evt-1.png");
-		expect(await Bun.file(path.join(dir, "evt-1.png")).arrayBuffer()).toHaveProperty("byteLength", 3);
+		expect(
+			await Bun.file(path.join(dir, "evt-1.png")).arrayBuffer(),
+		).toHaveProperty("byteLength", 3);
 	});
 
 	test("rejects oversized screenshots", async () => {
