@@ -22,27 +22,20 @@ jobs:
           registry-url: "https://registry.npmjs.org"
       - run: npm install -g npm@latest
       - run: bun install --frozen-lockfile
-      - name: Verify tag matches release package versions
+      - name: Verify tag matches release package version
         run: |
           TAG="${GITHUB_REF_NAME#v}"
-          for pkg in packages/browser-protocol packages/browser-broker packages/browser-omp-extension; do
-            PKG="$(node -p "require('./${pkg}/package.json').version")"
-            if [ "$PKG" != "$TAG" ]; then
-              echo "::error::${pkg} version $PKG does not match tag $GITHUB_REF_NAME"
-              exit 1
-            fi
-          done
+          PKG="$(node -p "require('./packages/browser-omp-extension/package.json').version")"
+          if [ "$PKG" != "$TAG" ]; then
+            echo "::error::browser-omp-extension version $PKG does not match tag $GITHUB_REF_NAME"
+            exit 1
+          fi
       - run: bun run check
       - run: bun run test
         env:
           SKIP_CHROME_E2E: "1"
       - run: bun run build:omp-extension
-      - run: bun scripts/prepare-release-package.ts packages/browser-protocol .release/browser-protocol
-      - run: bun scripts/prepare-release-package.ts packages/browser-broker .release/browser-broker
+      - run: bun test test/prepare-release-package.test.ts test/standalone-omp-package-smoke.test.ts
       - run: bun scripts/prepare-release-package.ts packages/browser-omp-extension .release/browser-omp-extension
-      - run: npm publish --access public --provenance
-        working-directory: .release/browser-protocol
-      - run: npm publish --access public --provenance
-        working-directory: .release/browser-broker
       - run: npm publish --access public --provenance
         working-directory: .release/browser-omp-extension

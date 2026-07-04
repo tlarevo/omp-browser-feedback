@@ -1,3 +1,4 @@
+import type { BrowserFeedbackEvent } from "@oh-my-pi/browser-protocol";
 import type { ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 import {
 	clearActiveFeedbackSubscription,
@@ -11,8 +12,9 @@ import {
 	createBrowserBrokerClientFromDiscovery,
 } from "./client";
 import { readConfig, writeConfig } from "./config";
-import type { OnFeedbackFn } from "./extension";
 import { renderBrowserFeedbackContext } from "./renderer";
+
+type OnFeedbackFn = (event: BrowserFeedbackEvent) => void;
 
 function parseBrokerStartArgs(argsAfterStart: string): {
 	port?: number;

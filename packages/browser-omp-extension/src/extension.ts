@@ -13,7 +13,7 @@ import { handleBfCommand } from "./commands";
 import { readConfig } from "./config";
 import { formatFeedbackAsPrompt } from "./renderer";
 
-export type OnFeedbackFn = (event: BrowserFeedbackEvent) => void;
+type OnFeedbackFn = (event: BrowserFeedbackEvent) => void;
 
 export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 	pi.setLabel("Browser Feedback");

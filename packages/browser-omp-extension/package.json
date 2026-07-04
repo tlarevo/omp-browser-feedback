@@ -1,6 +1,6 @@
 {
 	"type": "module",
-	"name": "@oh-my-pi/browser-omp-extension",
+	"name": "omp-browser-feedback",
 	"version": "0.0.1",
 	"description": "OMP extension for browser DOM feedback via the Chrome extension and local broker",
 	"homepage": "https://omp.sh",
@@ -18,9 +18,9 @@
 		]
 	},
 	"main": "./dist/extension.js",
-	"types": "./src/extension.ts",
+	"types": "./dist/types/extension.d.ts",
 	"scripts": {
-		"build": "bun build src/extension.ts --outfile dist/extension.js --target=bun --format=esm",
+		"build": "bun build src/extension.ts --outfile dist/extension.js --target=bun --format=esm && tsc -p tsconfig.publish.json",
 		"check": "biome check . && bun run check:types",
 		"check:types": "tsgo -p tsconfig.json --noEmit",
 		"lint": "biome lint .",
@@ -28,11 +28,9 @@
 		"fmt": "biome format --write .",
 		"test": "bun test --parallel"
 	},
-	"dependencies": {
-		"@oh-my-pi/browser-broker": "workspace:*",
-		"@oh-my-pi/browser-protocol": "workspace:*"
-	},
 	"devDependencies": {
+		"@oh-my-pi/browser-broker": "workspace:*",
+		"@oh-my-pi/browser-protocol": "workspace:*",
 		"@oh-my-pi/pi-coding-agent": "*",
 		"@types/bun": "catalog:"
 	},
@@ -47,18 +45,13 @@
 		"provenance": true
 	},
 	"files": [
-		"src",
 		"dist",
 		"CHANGELOG.md"
 	],
 	"exports": {
 		".": {
-			"types": "./src/extension.ts",
+			"types": "./dist/types/extension.d.ts",
 			"import": "./dist/extension.js"
-		},
-		"./*": {
-			"types": "./src/*.ts",
-			"import": "./src/*.ts"
 		}
 	}
 }

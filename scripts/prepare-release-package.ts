@@ -16,6 +16,49 @@ const dependencySections: DependencySection[] = [
 	"peerDependencies",
 	"optionalDependencies",
 ];
+type Exports = string | { [condition: string]: Exports } | Exports[];
+
+const INTERNAL_BROWSER_FEEDBACK_PACKAGES: Record<string, true> = {
+	"@oh-my-pi/browser-broker": true,
+	"@oh-my-pi/browser-protocol": true,
+};
+
+export function rewriteTypesPath(value: string): string {
+	return value.replace(/^\.\/src\/(.+)\.tsx?$/, "./dist/types/$1.d.ts");
+}
+
+export function rewriteExports(node: Exports): Exports {
+	if (typeof node === "string") return node;
+	if (Array.isArray(node)) return node.map((entry) => rewriteExports(entry));
+	return Object.fromEntries(
+		Object.entries(node).map(([key, value]) => [
+			key,
+			key === "types" && typeof value === "string"
+				? rewriteTypesPath(value)
+				: rewriteExports(value),
+		]),
+	);
+}
+
+export function pruneStandaloneBrowserFeedbackDeps(
+	manifest: Manifest,
+): Manifest {
+	const rewritten = structuredClone(manifest);
+	for (const section of dependencySections) {
+		const deps = rewritten[section];
+		if (!deps || typeof deps !== "object" || Array.isArray(deps)) continue;
+		for (const packageName of Object.keys(INTERNAL_BROWSER_FEEDBACK_PACKAGES)) {
+			delete deps[packageName];
+		}
+	}
+	if (typeof rewritten.types === "string") {
+		rewritten.types = rewriteTypesPath(rewritten.types);
+	}
+	if (rewritten.exports) {
+		rewritten.exports = rewriteExports(rewritten.exports as Exports);
+	}
+	return rewritten;
+}
 
 export function rewriteWorkspaceProtocolRanges(
 	manifest: Manifest,
@@ -96,9 +139,10 @@ async function main(): Promise<void> {
 		await fs.readFile(manifestPath, "utf8"),
 	) as Manifest;
 	const rewritten = rewriteWorkspaceProtocolRanges(manifest, versionsByName);
+	const standaloneRewritten = pruneStandaloneBrowserFeedbackDeps(rewritten);
 	await fs.writeFile(
 		manifestPath,
-		`${JSON.stringify(rewritten, null, "\t")}\n`,
+		`${JSON.stringify(standaloneRewritten, null, "\t")}\n`,
 	);
 	console.log(path.relative(repoRoot, outDir));
 }
