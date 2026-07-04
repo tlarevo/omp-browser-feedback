@@ -48,7 +48,8 @@
 	},
 	"files": [
 		"src",
-		"dist"
+		"dist",
+		"CHANGELOG.md"
 	],
 	"exports": {
 		".": {
