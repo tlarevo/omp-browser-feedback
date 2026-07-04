@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.0.2] - 2026-07-04
+
+### Changed
+
+- publish browser feedback as a single standalone OMP package (`omp-browser-feedback`)
+- stop requiring separately published browser broker/protocol npm packages
+- keep `@oh-my-pi/pi-coding-agent` as the intentional OMP host peer dependency
+
 ## [0.0.1] - 2026-07-04
 
 ### Added
@@ -25,11 +33,3 @@
   `@oh-my-pi/browser-broker`, `@oh-my-pi/browser-protocol`) — the extension
   silently failed to load for every consumer, via `omp -e`, `omp plugin
   link`, and `omp plugin install` alike, with no error surfaced anywhere.
-
-## Unreleased
-
-### Changed
-
-- publish browser feedback as a single standalone OMP package (`omp-browser-feedback`)
-- stop requiring separately published browser broker/protocol npm packages
-- keep `@oh-my-pi/pi-coding-agent` as the intentional OMP host peer dependency
