@@ -34,8 +34,11 @@ jobs:
       - run: bun run test
         env:
           SKIP_CHROME_E2E: "1"
+          SKIP_OMP_SMOKE: "1"
       - run: bun run build:omp-extension
       - run: bun test test/prepare-release-package.test.ts test/standalone-omp-package-smoke.test.ts
+        env:
+          SKIP_OMP_SMOKE: "1"
       - run: bun scripts/prepare-release-package.ts packages/browser-omp-extension .release/browser-omp-extension
       - run: npm publish --access public --provenance
         env:

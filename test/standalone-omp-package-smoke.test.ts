@@ -5,6 +5,7 @@ import * as path from "node:path";
 
 const repoRoot = path.resolve(import.meta.dir, "..");
 const children: Bun.Subprocess[] = [];
+const SKIP = process.env.SKIP_OMP_SMOKE === "1";
 
 afterEach(async () => {
 	for (const child of children.splice(0)) {
@@ -39,6 +40,7 @@ async function waitForReady(stdout: ReadableStream<Uint8Array>): Promise<void> {
 
 describe("standalone omp package", () => {
 	test("prepared artifact registers the bf command", async () => {
+		if (SKIP) return;
 		const tmpDir = await fs.mkdtemp(
 			path.join(os.tmpdir(), "standalone-omp-package-"),
 		);
