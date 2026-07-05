@@ -235,27 +235,6 @@ export async function handleBfCommand(
 		}
 		return;
 	}
-
-	const client = await loadClient();
-	if (!client) {
-		if (
-			first === "latest" ||
-			first === "list" ||
-			first === "use" ||
-			first === "clear" ||
-			first === "pair"
-		) {
-			notify("Browser broker is not connected. Use `/bf connect` first.");
-			return;
-		}
-		notify(
-			"Usage: /bf connect | disconnect | status | broker [start|stop|status] | pair [reset] | latest | list | use [id] | clear | rename <name> | settings [auto-run on|off]",
-		);
-		return;
-	}
-
-	const sessionId = ctx.sessionManager.getSessionId();
-
 	if (first === "pair") {
 		if (rest[0] === "reset") {
 			try {
@@ -275,13 +254,21 @@ export async function handleBfCommand(
 		}
 		try {
 			const result = await ensureBroker();
-			const sessionName = ctx.sessionManager.getSessionName() ?? sessionId;
+			const sessionName =
+				ctx.sessionManager.getSessionName() ??
+				ctx.sessionManager.getSessionId();
 			const pairingClient = createClient({
 				baseUrl: result.baseUrl,
 				authToken: result.authToken,
 			});
-			await registerCurrentSession(pairingClient, sessionId, sessionName);
-			const pair = await pairingClient.openPairingWindow(sessionId);
+			await registerCurrentSession(
+				pairingClient,
+				ctx.sessionManager.getSessionId(),
+				sessionName,
+			);
+			const pair = await pairingClient.openPairingWindow(
+				ctx.sessionManager.getSessionId(),
+			);
 			notify(
 				[
 					`Pairing code: ${pair.code}`,
@@ -296,6 +283,25 @@ export async function handleBfCommand(
 		}
 		return;
 	}
+
+	const client = await loadClient();
+	if (!client) {
+		if (
+			first === "latest" ||
+			first === "list" ||
+			first === "use" ||
+			first === "clear"
+		) {
+			notify("Browser broker is not connected. Use `/bf connect` first.");
+			return;
+		}
+		notify(
+			"Usage: /bf connect | disconnect | status | broker [start|stop|status] | pair [reset] | latest | list | use [id] | clear | rename <name> | settings [auto-run on|off]",
+		);
+		return;
+	}
+
+	const sessionId = ctx.sessionManager.getSessionId();
 
 	if (first === "latest") {
 		const latest = await client.latestFeedback?.(sessionId);
