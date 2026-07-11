@@ -91,7 +91,7 @@ but <mutation> ...
 - Tear off a branch: `but move <branch-name-or-id> zz` (`zz` = uncommitted; branch name or branch CLI ID)
 - Push: `but push <branch-name>` — always specify the branch; bare `but push` pushes ALL branches when run non-interactively
 - Pull: `but pull --check` then `but pull`
-- Create PR: `but pr new <branch-id> [-m "Title..."] [-F pr_message.txt] [-t] [--draft]` — auto-pushes before creating the PR; do not run `but push` first
+- Create PR: `but pr new <branch-id> (-m "Title..." | -F pr_message.txt | -t) [--draft]` — one of `-m`/`-F`/`-t` is required to avoid an interactive editor prompt; auto-pushes before creating the PR; do not run `but push` first
 - Manage PRs: `but pr auto-merge <selector>`, `but pr set-draft <selector>`, `but pr set-ready <selector>`
 
 ## Task Recipes
@@ -103,7 +103,7 @@ For "get latest from main", "update/sync this workspace", or "pull main":
 1. `but status -fv`
 2. `but pull --check`
 3. If clean, `but pull`
-4. `but status -fv`
+4. Trust the workspace state `but pull` returns; only re-run `but status -fv` if that output is missing information you need.
 
 `but pull` updates applied branches onto the latest target branch (usually
 `main`). Do not use raw `git pull` or `git rebase`.

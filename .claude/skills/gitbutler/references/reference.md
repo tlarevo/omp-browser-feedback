@@ -399,13 +399,12 @@ Run `but pull --check` first, then `but pull` if clean. Do not use raw
 Create and manage pull requests.
 
 ```bash
-but pr new <branch-id>        # Push branch and create PR (recommended)
+but pr new <branch-id> -t     # Push branch and create PR from commit message (recommended)
 but pr new <branch-id> -F pr_message.txt    # Use file: first line is title, rest is description
 but pr new <branch-id> -m "Title..."        # Inline message: first line is title, rest is description
-but pr new <branch-id> -t     # Use default content (commit message), skip prompts
-but pr new <branch-id> --draft  # Create as draft
-but pr new <branch-id> --no-hooks  # Bypass pre-push hooks (--no-verify also works)
-but pr new <branch-id> -s     # Skip force-push protection checks
+but pr new <branch-id> --draft -t  # Create as draft
+but pr new <branch-id> --no-hooks -t  # Bypass pre-push hooks (--no-verify also works)
+but pr new <branch-id> -s -t   # Skip force-push protection checks
 but pr --draft                # Top-level draft flag
 but pr auto-merge <selector>  # Enable auto-merge
 but pr set-draft <selector>   # Mark review as draft

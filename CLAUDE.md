@@ -42,7 +42,7 @@
 
 ### Publish on a shortcut phrase
 
-- When the user says `ship it`, commit this session's changes on its dedicated GitButler branch, creating one if needed.
+- When the user says `ship it`, run `but diff` to identify this session's owned files/hunks, then commit only those via `--changes <id>,<id>` on its dedicated GitButler branch, creating one if needed. If ownership of the uncommitted changes is unclear, stop and ask instead of committing everything.
 - Push the branch and open or update its pull request with GitButler.
 - Reuse the existing branch or pull request for this session when one already exists.
 - Treat this phrase as approval to commit, push, and open or update a pull request without asking again, unless something risky or surprising changed.

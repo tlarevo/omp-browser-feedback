@@ -6,7 +6,7 @@ Deep dive into GitButler's conceptual model and philosophy.
 
 ### Traditional Git: Serial Branching
 
-```
+```text
 main ──┬── feature-a (checkout here, work, commit, checkout back)
        └── feature-b (checkout here, work, commit, checkout back)
 ```
@@ -17,7 +17,7 @@ main ──┬── feature-a (checkout here, work, commit, checkout back)
 
 ### GitButler: Parallel Stacks
 
-```
+```text
 workspace (gitbutler/workspace)
   ├─ feature-a (applied, merged into workspace)
   ├─ feature-b (applied, merged into workspace)
@@ -43,7 +43,7 @@ workspace (gitbutler/workspace)
 
 Every object gets a short, human-readable CLI ID shown in `but status`. IDs are generated per-session and are unique across all entity types (no two objects share an ID) — always read them from `but status`.
 
-```
+```text
 Commits:    1b, 8f, c2     (short hex prefixes of the SHA, long enough to be unique)
 Branches:   fe, bu, ui     (unique 2–3 char substring of the branch name, e.g. "fe" from "feature-x";
                              falls back to auto-generated ID if no unique substring exists)
@@ -70,7 +70,7 @@ but rub <commit-id> <commit-id>          # Squash commits
 
 Create with `but branch new <name>`:
 
-```
+```text
 main ──┬── api-endpoint (independent)
        └── ui-update    (independent)
 ```
@@ -89,7 +89,7 @@ Example: Adding a new API endpoint and updating button styles are independent.
 
 **To create a new stacked branch** from scratch: `but branch new <name> -a <anchor>` — only use this when the child branch doesn't exist yet.
 
-```
+```text
 main ── authentication ── user-profile ── settings-page
         (base)            (stacked)       (stacked)
 ```
@@ -149,7 +149,7 @@ GitButler tracks dependencies between changes automatically.
 
 ### How It Works
 
-```
+```text
 Commit C1: Added function foo()
 Commit C2: Added function bar()
 Uncommitted: Call to foo() in new code

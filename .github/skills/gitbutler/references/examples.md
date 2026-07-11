@@ -20,7 +20,7 @@ but branch new ui-styling
 # (edit api/users.js and components/Button.svelte)
 
 # 4. Check what's uncommitted
-but status -fv
+but diff
 
 # 5. Commit specific files directly using --changes (recommended for agents)
 # Use CLI ID values from but status -fv output (e.g., branch IDs and file IDs)
@@ -33,8 +33,8 @@ but commit <ui-branch-id> -m "Update button hover styles" --changes <ui-file-id>
 # but amend <api-commit-id> --changes <api-fix-file-id>,<api-fix-hunk-id>
 
 # 6. Create pull requests (auto-pushes the branches)
-but pr new <api-branch-id>
-but pr new <ui-branch-id>
+but pr new <api-branch-id> -t
+but pr new <ui-branch-id> -t
 ```
 
 **Why parallel branches?** The API endpoint and UI styling are independent - neither depends on the other. They can be reviewed and merged separately.
@@ -45,6 +45,7 @@ but pr new <ui-branch-id>
 
 ```bash
 # 1. Check current state and update
+but pull --check
 but pull
 but status -fv
 
@@ -53,7 +54,7 @@ but branch new add-authentication
 
 # 3. Implement auth and commit
 # (edit auth/login.js, auth/middleware.js)
-but status -fv
+but diff
 but commit bu -m "Add JWT authentication" --changes <file-ids>
 
 # 4. Create stacked branch anchored on authentication
@@ -61,7 +62,7 @@ but branch new user-profile -a bu
 
 # 5. Implement profile page (depends on auth)
 # (edit pages/profile.js)
-but status -fv
+but diff
 but commit bv -m "Add user profile page" --changes <file-ids>
 
 # 6. Create stacked pull requests through GitButler (auto-pushes the stack)
@@ -199,6 +200,7 @@ but commit bv -m "Add dialog component" --changes <id> # To frontend
 
 ```bash
 # 1. Pull updates
+but pull --check
 but pull
 
 # Output:
@@ -246,6 +248,7 @@ but resolve finish
 
 ```bash
 # 1. Update to latest
+but pull --check
 but pull
 
 # 2. Create branch for feature
@@ -255,7 +258,7 @@ but branch new user-dashboard
 # (create dashboard.js, add routes)
 
 # 4. Check status and gather file IDs
-but status -fv
+but diff
 
 # 5. First commit
 but commit bu -m "Add dashboard route and basic layout" --changes <file-ids>
@@ -273,12 +276,13 @@ but absorb a1    # Absorb specific file into appropriate commit
 but squash bu    # Combine all commits (optional)
 
 # 9. Create pull request (auto-pushes the branch)
-but pr new bu
+but pr new bu -t
 
 # Output:
 # Created PR #123: https://github.com/org/repo/pull/123
 
 # 10. After PR is merged, update
+but pull --check
 but pull
 ```
 
@@ -306,7 +310,7 @@ but unapply bw
 but commit bu -m "Complete feature-a" --changes <file-ids>
 
 # 4. Create PR for feature-a (auto-pushes)
-but pr new bu
+but pr new bu -t
 
 # 5. Reapply other branches
 but apply feature-b
@@ -360,6 +364,7 @@ but push feature-x
 
 ```bash
 # Morning: Start day
+but pull --check
 but pull    # Get latest from team
 
 # Start new task
@@ -367,7 +372,7 @@ but branch new fix-auth-bug  # Create branch for today's work
 
 # Work and commit iteratively
 # (make changes)
-but status -fv              # Check changes
+but diff                     # Check changes
 but commit bu -m "Identify auth bug source" --changes <file-ids>
 # (make more changes)
 but commit bu -m "Fix token expiration handling" --changes <file-ids>
@@ -378,7 +383,7 @@ but absorb a1              # Absorb specific fix into appropriate commit
 but branch new hotfix-login  # Parallel branch for urgent work
 # (make fix)
 but commit bv -m "Fix login redirect loop" --changes <file-ids>
-but pr new bv      # Push and create PR immediately
+but pr new bv -t   # Push and create PR immediately
 
 # Back to original work
 # (continue working on bu, auth bug fix)
@@ -386,7 +391,7 @@ but commit bu -m "Add tests for token handling" --changes <file-ids>
 
 # End of day: Clean up and create PR
 but squash bu    # Combine into clean history
-but pr new bu      # Push and create PR
+but pr new bu -t   # Push and create PR
 
 # After PR review: Make requested changes
 # (make changes based on feedback)
@@ -487,5 +492,4 @@ eval "$(but completions bash)"    # Add to ~/.bashrc
 
 ```bash
 but show bu       # Show all commits in branch
-git log bu               # Traditional git log (read-only, still works)
 ```
