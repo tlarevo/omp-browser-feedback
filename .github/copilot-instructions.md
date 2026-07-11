@@ -1,7 +1,7 @@
 <!-- gitbutler-agent-setup:start -->
 ## Version control
 
-- Use GitButler (`but`) for version-control inspection and write operations, including status, diffs, branching, committing, pushing, and history edits.
+- Use GitButler (`but`) for version-control write operations (branching, committing, pushing, history edits) and for inspection where `but` has an equivalent (`but status`, `but diff`). Read-only `git log`, `git blame`, `git show`, and `git reflog` are fine — GitButler doesn't fully replace them.
 - Assume multiple agents may be working in this repository. Do not move, amend, squash, discard, commit, push, or otherwise modify another agent's work unless the user asks.
 - For commit just/only/specific changes on a new branch (selected-change requests), use the two-command fast path from the GitButler skill: `but diff`, then `but commit <branch> -c -m "message" --changes <id>,<id>`.
 - For that fast path, after the commit succeeds, stop and summarize; do not run separate branch, staging, status, or diff commands unless the commit output is missing information you need.
