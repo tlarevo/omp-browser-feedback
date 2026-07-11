@@ -28,9 +28,20 @@ export interface DiscoverBrokerOptions {
 	fetch?: ExtensionFetch;
 }
 
+export interface RedeemPairingCodeOptions {
+	baseUrl: string;
+	browserInstallId: string;
+	code: string;
+	fetch?: ExtensionFetch;
+}
+
+export interface RedeemPairingCodeResult {
+	capabilityToken: string;
+}
+
 export interface SubmitFeedbackOptions {
 	baseUrl: string;
-	authToken: string;
+	capabilityToken: string;
 	event: BrowserFeedbackEvent;
 	screenshot?: Blob;
 	fetch?: ExtensionFetch;
@@ -38,12 +49,39 @@ export interface SubmitFeedbackOptions {
 
 export interface ListSessionsOptions {
 	baseUrl: string;
-	authToken: string;
+	capabilityToken: string;
 	fetch?: ExtensionFetch;
 }
 
 export interface ListSessionsResult {
 	sessions: BrowserSessionRegistration[];
+}
+
+interface ErrorResponseBody {
+	message?: string;
+}
+
+function isErrorResponseBody(value: unknown): value is ErrorResponseBody {
+	if (!value || typeof value !== "object") return false;
+	const record = value as Record<string, unknown>;
+	return (
+		!("message" in record) ||
+		record.message === undefined ||
+		typeof record.message === "string"
+	);
+}
+
+async function readErrorMessage(
+	response: Response,
+	fallback: string,
+): Promise<string> {
+	try {
+		const body = (await response.json()) as unknown;
+		if (isErrorResponseBody(body) && typeof body.message === "string") {
+			return body.message;
+		}
+	} catch {}
+	return fallback;
 }
 
 export async function probeBroker(
@@ -75,6 +113,32 @@ export async function discoverBroker(
 	return undefined;
 }
 
+export async function redeemPairingCode(
+	options: RedeemPairingCodeOptions,
+): Promise<RedeemPairingCodeResult> {
+	const fetchImpl = options.fetch ?? fetch;
+	const response = await fetchImpl(
+		`${options.baseUrl.replace(/\/+$/, "")}/api/pair`,
+		{
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				browserInstallId: options.browserInstallId,
+				code: options.code,
+			}),
+		},
+	);
+	if (!response.ok) {
+		throw new Error(
+			await readErrorMessage(
+				response,
+				`Browser pairing failed with HTTP ${response.status}`,
+			),
+		);
+	}
+	return (await response.json()) as RedeemPairingCodeResult;
+}
+
 export async function submitFeedback(
 	options: SubmitFeedbackOptions,
 ): Promise<void> {
@@ -88,7 +152,7 @@ export async function submitFeedback(
 		`${options.baseUrl.replace(/\/+$/, "")}/api/feedback`,
 		{
 			method: "POST",
-			headers: { Authorization: `Bearer ${options.authToken}` },
+			headers: { Authorization: `Bearer ${options.capabilityToken}` },
 			body: form,
 		},
 	);
@@ -106,7 +170,7 @@ export async function listSessions(
 	const response = await fetchImpl(
 		`${options.baseUrl.replace(/\/+$/, "")}/api/sessions`,
 		{
-			headers: { Authorization: `Bearer ${options.authToken}` },
+			headers: { Authorization: `Bearer ${options.capabilityToken}` },
 		},
 	);
 	if (!response.ok) {

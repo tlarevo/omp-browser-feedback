@@ -50,6 +50,10 @@ export function defaultDiscoveryPath(): string {
 	return path.join(os.homedir(), ".omp", "browser-broker.json");
 }
 
+export function defaultPairingRegistryPath(): string {
+	return path.join(os.homedir(), ".omp", "browser-pairing-registry.json");
+}
+
 export function resolveBrokerPorts(options: BrokerPortOptions = {}): number[] {
 	if (options.port !== undefined) return [options.port];
 	return portsInRange(
