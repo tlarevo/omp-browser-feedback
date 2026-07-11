@@ -193,6 +193,70 @@ describe("handleBfCommand", () => {
 		expect(notify.last()).toContain("Browser pairing reset");
 		expect(notify.last()).toContain("pair again");
 	});
+
+	test("/bf connect points users to /bf pair instead of pasting the root token", async () => {
+		const notify = createNotifyHarness();
+		let registeredSessionId = "";
+		let subscribedSessionId = "";
+
+		await handleBfCommand(
+			"connect",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				ensureBrokerRunning: async () => ({
+					baseUrl: "http://127.0.0.1:4317",
+					authToken: "root-token",
+					port: 4317,
+					reused: true,
+				}),
+				createClient: () =>
+					({
+						registerSession: async (input: { sessionId: string }) => {
+							registeredSessionId = input.sessionId;
+						},
+						subscribeFeedback: (sessionId: string) => {
+							subscribedSessionId = sessionId;
+							return { close() {} };
+						},
+					}) as BrowserBrokerClient,
+				setActiveFeedbackSubscription: () => {},
+			},
+		);
+
+		expect(registeredSessionId).toBe("ses_1");
+		expect(subscribedSessionId).toBe("ses_1");
+		expect(notify.last()).toContain("Run `/bf pair`");
+		expect(notify.last()).not.toContain("paste into Chrome extension popup");
+		expect(notify.last()).not.toContain("root-token");
+	});
+
+	test("/bf broker start uses the injected ensureBrokerRunning dependency", async () => {
+		const notify = createNotifyHarness();
+		let injectedCalls = 0;
+
+		await handleBfCommand(
+			"broker start --port 4318",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				ensureBrokerRunning: async ({ port, portRange }) => {
+					injectedCalls += 1;
+					expect(port).toBe(4318);
+					expect(portRange).toBeUndefined();
+					return {
+						baseUrl: "http://127.0.0.1:4318",
+						authToken: "root-token",
+						port: 4318,
+						reused: false,
+					};
+				},
+			},
+		);
+
+		expect(injectedCalls).toBe(1);
+		expect(notify.last()).toContain("http://127.0.0.1:4318");
+	});
 });
 
 describe("browserFeedbackExtension", () => {

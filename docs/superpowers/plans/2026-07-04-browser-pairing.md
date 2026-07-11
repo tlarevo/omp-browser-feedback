@@ -38,7 +38,7 @@
   - `issuePairingCode(createdBySessionId: string): Promise<{ pairingId: string; code: string; expiresAt: string }>`
   - `redeemPairingCode(input: { browserInstallId: string; code: string; label?: string }): Promise<{ capabilityToken: string }>`
   - `revokeAllBrowserCapabilities(): Promise<void>`
-  - `isAuthorizedBrowserRequest(request: Request): boolean`
+  - `isAuthorizedBrowserRequest(request: Request, validateBrowserCapability: (capabilityToken: string) => boolean): boolean`
 
 - [ ] **Step 1: Write the failing broker pairing store tests**
 

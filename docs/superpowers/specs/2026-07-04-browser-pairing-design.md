@@ -171,8 +171,8 @@ New responsibilities:
 Likely files:
 
 - create `packages/browser-broker/src/pairing-store.ts`
-- create `packages/browser-broker/src/pairing.ts`
 - modify `packages/browser-broker/src/server.ts`
+- possibly extend `packages/browser-broker/src/auth.ts` for browser-capability authorization helpers
 - possibly extend `packages/browser-broker/src/discovery.ts` only for broker metadata reuse, not for browser auth storage
 
 ### OMP extension
@@ -188,7 +188,6 @@ Likely files:
 
 - modify `packages/browser-omp-extension/src/commands.ts`
 - modify `packages/browser-omp-extension/src/client.ts`
-- modify `packages/browser-omp-extension/src/extension.ts`
 
 ### Chrome extension
 

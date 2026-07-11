@@ -76,6 +76,105 @@ describe("pairing store", () => {
 		);
 	});
 
+	test("recovers from an invalid registry file by quarantining it", async () => {
+		const registryPath = await createRegistryPath();
+		await fs.writeFile(
+			registryPath,
+			'{"version":999,"browserCapabilities":"bad"}',
+		);
+
+		const store = createPairingStore({ registryPath });
+		const issued = await store.issuePairingCode("ses_1");
+		const redeemed = await store.redeemPairingCode({
+			browserInstallId: "browser_a",
+			code: issued.code,
+		});
+
+		expect(store.validateBrowserCapability(redeemed.capabilityToken)).toBe(
+			true,
+		);
+
+		const dirEntries = await fs.readdir(path.dirname(registryPath));
+		expect(dirEntries).toContain("registry.json");
+		expect(
+			dirEntries.some(
+				(entry) =>
+					entry.startsWith("registry.json.invalid-") && entry.endsWith(".json"),
+			),
+		).toBe(true);
+	});
+
+	test("recovers from malformed capability records", async () => {
+		const registryPath = await createRegistryPath();
+		await fs.writeFile(
+			registryPath,
+			JSON.stringify({
+				version: 1,
+				browserCapabilities: [
+					{
+						browserInstallId: "browser_a",
+						capabilityTokenHash: "hash_1",
+						createdAt: "not-a-date",
+					},
+				],
+			}),
+		);
+
+		const store = createPairingStore({ registryPath });
+		const issued = await store.issuePairingCode("ses_1");
+		const redeemed = await store.redeemPairingCode({
+			browserInstallId: "browser_a",
+			code: issued.code,
+		});
+
+		expect(store.validateBrowserCapability(redeemed.capabilityToken)).toBe(
+			true,
+		);
+
+		const dirEntries = await fs.readdir(path.dirname(registryPath));
+		expect(
+			dirEntries.some(
+				(entry) =>
+					entry.startsWith("registry.json.invalid-") && entry.endsWith(".json"),
+			),
+		).toBe(true);
+	});
+
+	test("persists capability usage after repeated validations cross the throttle window", async () => {
+		const registryPath = await createRegistryPath();
+		const now = new Date("2026-07-04T00:00:00.000Z");
+		const clock: PairingStoreClock = { now: () => new Date(now) };
+		const store = createPairingStore({ clock, registryPath });
+		const issued = await store.issuePairingCode("ses_1");
+		const redeemed = await store.redeemPairingCode({
+			browserInstallId: "browser_a",
+			code: issued.code,
+		});
+
+		const beforeValidate = await fs.readFile(registryPath, "utf8");
+
+		for (let minute = 1; minute <= 4; minute += 1) {
+			now.setMinutes(minute);
+			expect(store.validateBrowserCapability(redeemed.capabilityToken)).toBe(
+				true,
+			);
+			expect(await fs.readFile(registryPath, "utf8")).toBe(beforeValidate);
+		}
+
+		now.setMinutes(6);
+		expect(store.validateBrowserCapability(redeemed.capabilityToken)).toBe(
+			true,
+		);
+
+		const afterThrottleWindow = await fs.readFile(registryPath, "utf8");
+		expect(afterThrottleWindow).toContain(
+			'"lastUsedAt": "2026-07-04T00:06:00.000Z"',
+		);
+
+		const dirEntries = await fs.readdir(path.dirname(registryPath));
+		expect(dirEntries.some((entry) => entry.endsWith(".tmp"))).toBe(false);
+	});
+
 	test("revokes persisted capabilities", async () => {
 		const registryPath = await createRegistryPath();
 		const store = createPairingStore({ registryPath });

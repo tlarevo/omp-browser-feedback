@@ -6,6 +6,7 @@ const PAIRING_CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
 const PAIRING_CODE_LENGTH = 6;
 const PAIRING_TTL_MS = 2 * 60 * 1000;
 const PAIRING_ATTEMPT_LIMIT = 5;
+const CAPABILITY_LAST_USED_PERSIST_INTERVAL_MS = 5 * 60 * 1000;
 const PAIRING_REGISTRY_VERSION = 1;
 
 export interface PairingStoreClock {
@@ -40,6 +41,41 @@ interface PairingStoreOptions {
 	registryPath: string;
 }
 
+function createEmptyRegistryFile(): PairingRegistryFile {
+	return {
+		version: PAIRING_REGISTRY_VERSION,
+		browserCapabilities: [],
+	};
+}
+
+function isValidDateString(value: unknown): value is string {
+	return typeof value === "string" && !Number.isNaN(Date.parse(value));
+}
+
+function isOptionalDateString(value: unknown): value is string | undefined {
+	return value === undefined || isValidDateString(value);
+}
+
+function isBrowserCapabilityRecord(
+	value: unknown,
+): value is BrowserCapabilityRecord {
+	if (!value || typeof value !== "object") return false;
+	const record = value as Record<string, unknown>;
+	return (
+		typeof record.browserInstallId === "string" &&
+		typeof record.capabilityTokenHash === "string" &&
+		(record.label === undefined || typeof record.label === "string") &&
+		isValidDateString(record.createdAt) &&
+		isOptionalDateString(record.lastUsedAt) &&
+		isOptionalDateString(record.revokedAt)
+	);
+}
+
+function quarantineInvalidRegistryFile(registryPath: string): void {
+	const invalidPath = `${registryPath}.invalid-${Date.now()}.json`;
+	fs.renameSync(registryPath, invalidPath);
+}
+
 function randomHex(bytes: number): string {
 	const values = new Uint8Array(bytes);
 	crypto.getRandomValues(values);
@@ -69,28 +105,32 @@ function createPairingCode(): string {
 
 function loadRegistryFile(registryPath: string): PairingRegistryFile {
 	if (!fs.existsSync(registryPath)) {
+		return createEmptyRegistryFile();
+	}
+
+	try {
+		const parsed = JSON.parse(fs.readFileSync(registryPath, "utf8")) as {
+			version?: unknown;
+			browserCapabilities?: unknown;
+		};
+		if (
+			parsed.version !== PAIRING_REGISTRY_VERSION ||
+			!Array.isArray(parsed.browserCapabilities) ||
+			!parsed.browserCapabilities.every((record) =>
+				isBrowserCapabilityRecord(record),
+			)
+		) {
+			throw new Error("Invalid pairing registry file");
+		}
+
 		return {
 			version: PAIRING_REGISTRY_VERSION,
-			browserCapabilities: [],
+			browserCapabilities: parsed.browserCapabilities,
 		};
+	} catch {
+		quarantineInvalidRegistryFile(registryPath);
+		return createEmptyRegistryFile();
 	}
-
-	const parsed = JSON.parse(fs.readFileSync(registryPath, "utf8")) as {
-		version?: unknown;
-		browserCapabilities?: unknown;
-	};
-	if (
-		parsed.version !== PAIRING_REGISTRY_VERSION ||
-		!Array.isArray(parsed.browserCapabilities)
-	) {
-		throw new Error("Invalid pairing registry file");
-	}
-
-	return {
-		version: PAIRING_REGISTRY_VERSION,
-		browserCapabilities:
-			parsed.browserCapabilities as BrowserCapabilityRecord[],
-	};
 }
 
 function persistRegistryFile(
@@ -98,7 +138,12 @@ function persistRegistryFile(
 	registry: PairingRegistryFile,
 ): void {
 	fs.mkdirSync(path.dirname(registryPath), { recursive: true, mode: 0o700 });
-	fs.writeFileSync(registryPath, `${JSON.stringify(registry, null, 2)}\n`);
+	const tmpPath = `${registryPath}.${process.pid}.tmp`;
+	fs.writeFileSync(tmpPath, `${JSON.stringify(registry, null, 2)}\n`, {
+		mode: 0o600,
+	});
+	fs.chmodSync(tmpPath, 0o600);
+	fs.renameSync(tmpPath, registryPath);
 	fs.chmodSync(registryPath, 0o600);
 }
 
@@ -106,6 +151,12 @@ export function createPairingStore(options: PairingStoreOptions) {
 	const clock = options.clock ?? { now: () => new Date() };
 	const registryPath = options.registryPath;
 	let registry = loadRegistryFile(registryPath);
+	const lastPersistedUsageAtByHash = new Map(
+		registry.browserCapabilities.map((record) => [
+			record.capabilityTokenHash,
+			record.lastUsedAt ?? record.createdAt,
+		]),
+	);
 	let activePairing: PairingWindowRecord | undefined;
 
 	return {
@@ -189,6 +240,7 @@ export function createPairingStore(options: PairingStoreOptions) {
 				],
 			};
 			persistRegistryFile(registryPath, registry);
+			lastPersistedUsageAtByHash.set(hashValue(capabilityToken), currentTime);
 			return { capabilityToken };
 		},
 		async revokeAllBrowserCapabilities() {
@@ -216,14 +268,27 @@ export function createPairingStore(options: PairingStoreOptions) {
 					!record.revokedAt,
 			);
 			if (!matched) return false;
-			const lastUsedAt = clock.now().toISOString();
+			const currentTime = clock.now();
+			const lastUsedAt = currentTime.toISOString();
+			const persistedReference =
+				lastPersistedUsageAtByHash.get(matched.capabilityTokenHash) ??
+				matched.createdAt ??
+				lastUsedAt;
+			const persistedReferenceMs = Date.parse(persistedReference);
+			const shouldPersistUsage =
+				Number.isNaN(persistedReferenceMs) ||
+				currentTime.getTime() - persistedReferenceMs >=
+					CAPABILITY_LAST_USED_PERSIST_INTERVAL_MS;
 			registry = {
 				...registry,
 				browserCapabilities: registry.browserCapabilities.map((record) =>
 					record === matched ? { ...record, lastUsedAt } : record,
 				),
 			};
-			persistRegistryFile(registryPath, registry);
+			if (shouldPersistUsage) {
+				persistRegistryFile(registryPath, registry);
+				lastPersistedUsageAtByHash.set(matched.capabilityTokenHash, lastUsedAt);
+			}
 			return true;
 		},
 	};

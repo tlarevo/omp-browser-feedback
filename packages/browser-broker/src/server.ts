@@ -44,6 +44,13 @@ function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
 	return Response.json(body, init);
 }
 
+function isAllowedBrowserOrigin(origin: string): boolean {
+	return (
+		/^chrome-extension:\/\/[a-p]{32}$/.test(origin) ||
+		/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)
+	);
+}
+
 async function readJson(request: Request): Promise<unknown> {
 	const text = await request.text();
 	return text.length > 0 ? JSON.parse(text) : {};
@@ -135,20 +142,15 @@ export async function createBrowserBrokerServer(
 			const wsOmpMatch = url.pathname.match(/^\/ws\/omp\/([^/]+)$/);
 			if (wsOmpMatch) {
 				const origin = request.headers.get("origin");
-				if (origin !== null) {
-					const allowedOrigin =
-						/^chrome-extension:\/\/[a-z]+$/.test(origin) ||
-						/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
-					if (!allowedOrigin) {
-						return jsonResponse(
-							{
-								ok: false,
-								code: "forbidden",
-								message: "Cross-origin WebSocket requests are not allowed",
-							},
-							{ status: 403 },
-						);
-					}
+				if (origin !== null && !isAllowedBrowserOrigin(origin)) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "forbidden",
+							message: "Cross-origin WebSocket requests are not allowed",
+						},
+						{ status: 403 },
+					);
 				}
 				const token = url.searchParams.get("token");
 				if (token !== options.authToken) {
@@ -179,6 +181,17 @@ export async function createBrowserBrokerServer(
 			}
 
 			if (request.method === "POST" && url.pathname === "/api/pair") {
+				const origin = request.headers.get("origin");
+				if (origin !== null && !isAllowedBrowserOrigin(origin)) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "forbidden",
+							message: "Cross-origin pairing requests are not allowed",
+						},
+						{ status: 403 },
+					);
+				}
 				const payload = (await readJson(request)) as Record<string, unknown>;
 				if (
 					typeof payload.browserInstallId !== "string" ||
@@ -216,10 +229,11 @@ export async function createBrowserBrokerServer(
 			}
 
 			const rootAuthorized = isAuthorizedRequest(request, options.authToken);
-			const browserAuthorized = isAuthorizedBrowserRequest(
-				request,
-				pairingStore.validateBrowserCapability,
-			);
+			const isBrowserAuthorized = () =>
+				isAuthorizedBrowserRequest(
+					request,
+					pairingStore.validateBrowserCapability,
+				);
 
 			if (request.method === "POST" && url.pathname === "/api/pair/open") {
 				if (!rootAuthorized) {
@@ -272,7 +286,7 @@ export async function createBrowserBrokerServer(
 			}
 
 			if (request.method === "GET" && url.pathname === "/api/sessions") {
-				if (!rootAuthorized && !browserAuthorized) {
+				if (!rootAuthorized && !isBrowserAuthorized()) {
 					return jsonResponse(
 						{
 							ok: false,
@@ -315,7 +329,7 @@ export async function createBrowserBrokerServer(
 			}
 
 			if (request.method === "POST" && url.pathname === "/api/feedback") {
-				if (!rootAuthorized && !browserAuthorized) {
+				if (!rootAuthorized && !isBrowserAuthorized()) {
 					return jsonResponse(
 						{
 							ok: false,

@@ -51,9 +51,9 @@ async function registerSession(server: { baseUrl: string }) {
 	});
 }
 
-async function openAndRedeemPairing(server: { baseUrl: string }) {
+async function openPairingWindow(server: { baseUrl: string }) {
 	await registerSession(server);
-	const issued = (await (
+	return (await (
 		await fetch(`${server.baseUrl}/api/pair/open`, {
 			method: "POST",
 			headers: rootJsonHeaders,
@@ -62,17 +62,27 @@ async function openAndRedeemPairing(server: { baseUrl: string }) {
 	).json()) as {
 		code: string;
 	};
-	return (await (
-		await fetch(`${server.baseUrl}/api/pair`, {
-			method: "POST",
-			headers: { "Content-Type": "application/json" },
-			body: JSON.stringify({
-				browserInstallId: "browser_a",
-				code: issued.code,
-				label: "Primary Browser",
-			}),
-		})
-	).json()) as {
+}
+
+async function redeemPairingCode(
+	server: { baseUrl: string },
+	code: string,
+	headers: Record<string, string> = { "Content-Type": "application/json" },
+) {
+	return await fetch(`${server.baseUrl}/api/pair`, {
+		method: "POST",
+		headers,
+		body: JSON.stringify({
+			browserInstallId: "browser_a",
+			code,
+			label: "Primary Browser",
+		}),
+	});
+}
+
+async function openAndRedeemPairing(server: { baseUrl: string }) {
+	const issued = await openPairingWindow(server);
+	return (await (await redeemPairingCode(server, issued.code)).json()) as {
 		capabilityToken: string;
 	};
 }
@@ -229,6 +239,64 @@ describe("browser broker server", () => {
 		expect(latest.feedback.payload.screenshot.ref).toBe(
 			"screenshots/evt_1.png",
 		);
+	});
+
+	test("pairing accepts requests without an Origin header", async () => {
+		const server = await createServer();
+		const issued = await openPairingWindow(server);
+
+		const response = await redeemPairingCode(server, issued.code);
+		const body = (await response.json()) as { capabilityToken: string };
+
+		expect(response.status).toBe(200);
+		expect(body.capabilityToken).toMatch(/^bcap_/);
+	});
+
+	test("pairing accepts a chrome-extension Origin header", async () => {
+		const server = await createServer();
+		const issued = await openPairingWindow(server);
+
+		const response = await redeemPairingCode(server, issued.code, {
+			"Content-Type": "application/json",
+			Origin: "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+		});
+		const body = (await response.json()) as { capabilityToken: string };
+
+		expect(response.status).toBe(200);
+		expect(body.capabilityToken).toMatch(/^bcap_/);
+	});
+
+	test("pairing accepts a localhost Origin header", async () => {
+		const server = await createServer();
+		const issued = await openPairingWindow(server);
+
+		const response = await redeemPairingCode(server, issued.code, {
+			"Content-Type": "application/json",
+			Origin: "http://localhost:3000",
+		});
+		const body = (await response.json()) as { capabilityToken: string };
+
+		expect(response.status).toBe(200);
+		expect(body.capabilityToken).toMatch(/^bcap_/);
+	});
+
+	test("pairing rejects a hostile Origin header", async () => {
+		const server = await createServer();
+		const issued = await openPairingWindow(server);
+
+		const response = await redeemPairingCode(server, issued.code, {
+			"Content-Type": "application/json",
+			Origin: "https://evil.example.com",
+		});
+		const body = (await response.json()) as {
+			ok: false;
+			code: string;
+			message: string;
+		};
+
+		expect(response.status).toBe(403);
+		expect(body.code).toBe("forbidden");
+		expect(body.message).toContain("Cross-origin");
 	});
 
 	test("browser capability can list sessions without root token", async () => {

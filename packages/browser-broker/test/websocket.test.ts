@@ -98,7 +98,7 @@ describe("browser broker websocket security", () => {
 				const wsUrl = `${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`;
 				const ws = new WebSocket(wsUrl, {
 					headers: {
-						Origin: "chrome-extension://abcdefghijklmnopqrstuvwxyzabcdef",
+						Origin: "chrome-extension://aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 					},
 				} as unknown as ConstructorParameters<typeof WebSocket>[1]);
 				const timer = setTimeout(
@@ -126,6 +126,53 @@ describe("browser broker websocket security", () => {
 				};
 			},
 		);
+		expect(message).toMatchObject({ type: "browser.feedback" });
+	});
+
+	test("allows WebSocket upgrade from a localhost Origin", async () => {
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+		});
+		servers.push(server);
+
+		await fetch(`${server.baseUrl}/api/sessions/register`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify(registration()),
+		});
+		const message = await new Promise<Record<string, unknown>>(
+			(resolve, reject) => {
+				const wsUrl = `${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`;
+				const ws = new WebSocket(wsUrl, {
+					headers: {
+						Origin: "http://localhost:3000",
+					},
+				} as unknown as ConstructorParameters<typeof WebSocket>[1]);
+				const timer = setTimeout(
+					() => reject(new Error("Timed out waiting for localhost WS message")),
+					2_000,
+				);
+				ws.onmessage = (event) => {
+					clearTimeout(timer);
+					ws.close();
+					resolve(JSON.parse(String(event.data)) as Record<string, unknown>);
+				};
+				ws.onerror = () => {
+					clearTimeout(timer);
+					reject(new Error("WS errored with localhost origin"));
+				};
+				ws.onopen = () => {
+					void fetch(`${server.baseUrl}/api/feedback`, {
+						method: "POST",
+						headers,
+						body: JSON.stringify(feedback()),
+					});
+				};
+			},
+		);
+
 		expect(message).toMatchObject({ type: "browser.feedback" });
 	});
 });

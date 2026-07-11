@@ -80,7 +80,7 @@ export async function handleBfCommand(
 		if (sub === "start") {
 			const { port, portRange } = parseBrokerStartArgs(rest.slice(1).join(" "));
 			try {
-				const result = await ensureBrokerRunning({ port, portRange });
+				const result = await ensureBroker({ port, portRange });
 				notify(
 					result.reused
 						? `Browser broker already running at ${result.baseUrl} (port ${result.port}).`
@@ -124,7 +124,7 @@ export async function handleBfCommand(
 			notify(
 				[
 					`Broker: ${result.baseUrl}${result.reused ? " (already running)" : " (started)"}`,
-					`Auth token: ${result.authToken}  ← paste into Chrome extension popup`,
+					"Run `/bf pair` to generate a one-time pairing code for the browser extension.",
 					`Session: ${sessionName}`,
 				].join("\n"),
 			);
