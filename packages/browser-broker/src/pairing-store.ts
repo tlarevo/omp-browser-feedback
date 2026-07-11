@@ -73,7 +73,9 @@ function isBrowserCapabilityRecord(
 
 function quarantineInvalidRegistryFile(registryPath: string): void {
 	const invalidPath = `${registryPath}.invalid-${Date.now()}.json`;
-	fs.renameSync(registryPath, invalidPath);
+	try {
+		fs.renameSync(registryPath, invalidPath);
+	} catch {}
 }
 
 function randomHex(bytes: number): string {

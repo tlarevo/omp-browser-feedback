@@ -1,4 +1,5 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { afterEach, describe, expect, test, vi } from "bun:test";
+import * as fsSync from "node:fs";
 import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
@@ -102,6 +103,37 @@ describe("pairing store", () => {
 					entry.startsWith("registry.json.invalid-") && entry.endsWith(".json"),
 			),
 		).toBe(true);
+	});
+
+	test("recovers from an invalid registry file even when quarantine rename fails", async () => {
+		const registryPath = await createRegistryPath();
+		await fs.writeFile(
+			registryPath,
+			'{"version":999,"browserCapabilities":"bad"}',
+		);
+		const renameSpy = vi
+			.spyOn(fsSync, "renameSync")
+			.mockImplementationOnce(() => {
+				throw new Error("rename failed");
+			});
+
+		try {
+			const store = createPairingStore({ registryPath });
+			const issued = await store.issuePairingCode("ses_1");
+			const redeemed = await store.redeemPairingCode({
+				browserInstallId: "browser_a",
+				code: issued.code,
+			});
+
+			expect(store.validateBrowserCapability(redeemed.capabilityToken)).toBe(
+				true,
+			);
+			expect(await fs.readFile(registryPath, "utf8")).toContain(
+				'"browserCapabilities": [',
+			);
+		} finally {
+			renameSpy.mockRestore();
+		}
 	});
 
 	test("recovers from malformed capability records", async () => {
