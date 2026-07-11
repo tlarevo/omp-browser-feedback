@@ -1,5 +1,6 @@
 import {
 	defaultDiscoveryPath,
+	discoverCompatibleBroker,
 	readDiscoveryFile,
 } from "@oh-my-pi/browser-broker";
 import {
@@ -16,6 +17,7 @@ export type BrowserBrokerFetch = (
 export interface BrowserBrokerClientOptions {
 	baseUrl: string;
 	authToken: string;
+	discoveryPath?: string;
 	fetch?: BrowserBrokerFetch;
 }
 
@@ -38,15 +40,62 @@ export interface BrowserPairingWindow {
 	expiresAt: string;
 }
 
+export interface BrowserBrokerConnectionInfo {
+	baseUrl: string;
+	authToken: string;
+}
+
+export interface BrowserFeedbackConnectionStatus {
+	state: "connecting" | "connected" | "reconnecting" | "closed";
+	reconnectAttempts: number;
+	baseUrl: string;
+}
+
+type BrowserBrokerTimeoutHandle = ReturnType<typeof globalThis.setTimeout>;
+
+type BrowserBrokerTimerFn = (
+	callback: () => void | Promise<void>,
+	delay: number,
+) => BrowserBrokerTimeoutHandle;
+
+interface BrowserBrokerSocket {
+	close(): void;
+	onclose: (() => void) | null;
+	onerror: (() => void) | null;
+	onmessage: ((event: { data: unknown }) => void) | null;
+	onopen: (() => void) | null;
+}
+
+type BrowserBrokerSocketFactory = (url: string) => BrowserBrokerSocket;
+
+export interface BrowserFeedbackSubscriptionOptions {
+	createWebSocket?: BrowserBrokerSocketFactory;
+	reconnect?: () => Promise<BrowserBrokerConnectionInfo>;
+	onStateChange?: (status: BrowserFeedbackConnectionStatus) => void;
+	setTimeout?: BrowserBrokerTimerFn;
+	clearTimeout?: (handle: BrowserBrokerTimeoutHandle) => void;
+}
+
+const MAX_DEDUPED_EVENT_IDS = 1000;
+
 export class BrowserBrokerClient {
-	readonly #baseUrl: string;
-	readonly #authToken: string;
+	#baseUrl: string;
+	#authToken: string;
+	readonly #discoveryPath: string;
 	readonly #fetch: BrowserBrokerFetch;
 
 	constructor(options: BrowserBrokerClientOptions) {
 		this.#baseUrl = options.baseUrl.replace(/\/+$/, "");
 		this.#authToken = options.authToken;
+		this.#discoveryPath = options.discoveryPath ?? defaultDiscoveryPath();
 		this.#fetch = options.fetch ?? fetch;
+	}
+
+	getConnectionInfo(): BrowserBrokerConnectionInfo {
+		return {
+			baseUrl: this.#baseUrl,
+			authToken: this.#authToken,
+		};
 	}
 
 	async registerSession(input: BrowserBrokerSessionInput): Promise<void> {
@@ -213,35 +262,198 @@ export class BrowserBrokerClient {
 		}
 	}
 
-	subscribeFeedback(
-		sessionId: string,
-		onFeedback: (event: BrowserFeedbackEvent) => void,
-	): BrowserFeedbackSubscription {
+	async #reconnectFromDiscovery(): Promise<BrowserBrokerConnectionInfo> {
+		const discovery = await readDiscoveryFile(this.#discoveryPath);
+		if (!discovery) {
+			throw new Error("Browser broker discovery file not found");
+		}
+		const broker = await discoverCompatibleBroker({
+			host: discovery.host,
+			ports: [discovery.port],
+		});
+		if (!broker) {
+			throw new Error("Browser broker not reachable");
+		}
+		return {
+			baseUrl: broker.baseUrl,
+			authToken: discovery.auth_token,
+		};
+	}
+
+	#feedbackSocketUrl(sessionId: string): string {
 		const wsBase = this.#baseUrl
 			.replace(/^http:\/\//, "ws://")
 			.replace(/^https:\/\//, "wss://");
-		const wsUrl = `${wsBase}/ws/omp/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(this.#authToken)}`;
-		let ws: WebSocket | undefined = new WebSocket(wsUrl);
-		let closed = false;
+		return `${wsBase}/ws/omp/${encodeURIComponent(sessionId)}?token=${encodeURIComponent(this.#authToken)}`;
+	}
 
-		ws.onmessage = (event) => {
-			try {
-				const msg = JSON.parse(String(event.data)) as {
-					type?: string;
-					event?: BrowserFeedbackEvent;
-				};
-				if (msg.type === "browser.feedback" && msg.event) onFeedback(msg.event);
-			} catch {}
+	subscribeFeedback(
+		sessionId: string,
+		onFeedback: (event: BrowserFeedbackEvent) => void,
+		options: BrowserFeedbackSubscriptionOptions = {},
+	): BrowserFeedbackSubscription {
+		const createWebSocket =
+			options.createWebSocket ??
+			((url: string) => new WebSocket(url) as unknown as BrowserBrokerSocket);
+		const setReconnectTimer: BrowserBrokerTimerFn =
+			options.setTimeout ??
+			((callback, delay) =>
+				globalThis.setTimeout(() => {
+					void callback();
+				}, delay));
+		const clearReconnectTimer =
+			options.clearTimeout ??
+			((handle: BrowserBrokerTimeoutHandle) => {
+				globalThis.clearTimeout(handle);
+			});
+		const reconnect =
+			options.reconnect ?? (() => this.#reconnectFromDiscovery());
+
+		let socket: BrowserBrokerSocket | undefined;
+		let reconnectAttempts = 0;
+		let reconnectTimer: BrowserBrokerTimeoutHandle | undefined;
+		let closed = false;
+		let state: BrowserFeedbackConnectionStatus["state"] = "connecting";
+		const seenEventIds = new Set<string>();
+
+		const publishStatus = () => {
+			options.onStateChange?.({
+				state,
+				reconnectAttempts,
+				baseUrl: this.#baseUrl,
+			});
 		};
-		ws.onerror = () => {};
+
+		const openSocket = () => {
+			if (closed) return;
+			state = "connecting";
+			publishStatus();
+
+			const activeSocket = createWebSocket(this.#feedbackSocketUrl(sessionId));
+			socket = activeSocket;
+
+			activeSocket.onopen = () => {
+				if (socket !== activeSocket || closed) return;
+				reconnectAttempts = 0;
+				state = "connected";
+				publishStatus();
+			};
+
+			activeSocket.onmessage = (event) => {
+				if (closed || socket !== activeSocket) return;
+				try {
+					const msg = JSON.parse(String(event.data)) as {
+						type?: string;
+						event?: BrowserFeedbackEvent;
+					};
+					if (msg.type !== "browser.feedback" || !msg.event) return;
+					if (seenEventIds.has(msg.event.eventId)) return;
+					seenEventIds.add(msg.event.eventId);
+					if (seenEventIds.size > MAX_DEDUPED_EVENT_IDS) {
+						const oldestEventId = seenEventIds.values().next().value;
+						if (oldestEventId !== undefined) {
+							seenEventIds.delete(oldestEventId);
+						}
+					}
+					onFeedback(msg.event);
+				} catch {}
+			};
+
+			const detachActiveSocket = () => {
+				activeSocket.onopen = null;
+				activeSocket.onmessage = null;
+				activeSocket.onerror = null;
+				activeSocket.onclose = null;
+			};
+
+			const scheduleReconnect = () => {
+				if (closed || socket !== activeSocket || reconnectTimer) return;
+				socket = undefined;
+				detachActiveSocket();
+				activeSocket.close();
+				reconnectAttempts += 1;
+				state = "reconnecting";
+				publishStatus();
+
+				const delay = Math.min(500 * 2 ** (reconnectAttempts - 1), 30_000);
+				reconnectTimer = setReconnectTimer(async () => {
+					reconnectTimer = undefined;
+					if (closed) return;
+					try {
+						const next = await reconnect();
+						if (closed) return;
+						this.#baseUrl = next.baseUrl.replace(/\/+$/, "");
+						this.#authToken = next.authToken;
+						openSocket();
+					} catch {
+						if (closed) return;
+						scheduleRetry();
+					}
+				}, delay);
+			};
+
+			const scheduleRetry = () => {
+				if (closed || reconnectTimer) return;
+				reconnectAttempts += 1;
+				state = "reconnecting";
+				publishStatus();
+
+				const delay = Math.min(500 * 2 ** (reconnectAttempts - 1), 30_000);
+				reconnectTimer = setReconnectTimer(async () => {
+					reconnectTimer = undefined;
+					if (closed) return;
+					try {
+						const next = await reconnect();
+						if (closed) return;
+						this.#baseUrl = next.baseUrl.replace(/\/+$/, "");
+						this.#authToken = next.authToken;
+						openSocket();
+					} catch {
+						scheduleRetry();
+					}
+				}, delay);
+			};
+
+			activeSocket.onerror = () => {
+				scheduleReconnect();
+			};
+			activeSocket.onclose = () => {
+				scheduleReconnect();
+			};
+		};
+
+		const brokerClient = this;
+
+		publishStatus();
+		openSocket();
 
 		return {
 			close() {
-				if (!closed) {
-					closed = true;
-					ws?.close();
-					ws = undefined;
+				if (closed) return;
+				closed = true;
+				if (reconnectTimer) {
+					clearReconnectTimer(reconnectTimer);
+					reconnectTimer = undefined;
 				}
+				state = "closed";
+				publishStatus();
+
+				const activeSocket = socket;
+				socket = undefined;
+				if (activeSocket) {
+					activeSocket.onopen = null;
+					activeSocket.onmessage = null;
+					activeSocket.onerror = null;
+					activeSocket.onclose = null;
+					activeSocket.close();
+				}
+			},
+			getStatus() {
+				return {
+					state,
+					reconnectAttempts,
+					baseUrl: brokerClient.#baseUrl,
+				};
 			},
 		};
 	}
@@ -249,6 +461,7 @@ export class BrowserBrokerClient {
 
 export interface BrowserFeedbackSubscription {
 	close(): void;
+	getStatus(): BrowserFeedbackConnectionStatus;
 }
 
 export async function createBrowserBrokerClientFromDiscovery(
@@ -259,5 +472,6 @@ export async function createBrowserBrokerClientFromDiscovery(
 	return new BrowserBrokerClient({
 		baseUrl: discovery.base_url,
 		authToken: discovery.auth_token,
+		discoveryPath,
 	});
 }

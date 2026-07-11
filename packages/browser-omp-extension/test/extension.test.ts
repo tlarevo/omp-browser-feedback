@@ -230,6 +230,98 @@ describe("handleBfCommand", () => {
 		expect(notify.last()).not.toContain("paste into Chrome extension popup");
 		expect(notify.last()).not.toContain("root-token");
 	});
+	test("/bf connect rediscovery re-registers the same session before returning new credentials", async () => {
+		const notify = createNotifyHarness();
+		let reconnect:
+			| (() => Promise<{ baseUrl: string; authToken: string }>)
+			| undefined;
+		let initialRegisterCount = 0;
+		let rediscoveredRegisterSessionId = "";
+
+		await handleBfCommand(
+			"connect",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				ensureBrokerRunning: async () => ({
+					baseUrl: "http://127.0.0.1:4317",
+					authToken: "root-token",
+					port: 4317,
+					reused: true,
+				}),
+				createClient: () =>
+					({
+						registerSession: async () => {
+							initialRegisterCount += 1;
+						},
+						subscribeFeedback: (
+							_sessionId: string,
+							_onFeedback: unknown,
+							options?: {
+								reconnect?: () => Promise<{
+									baseUrl: string;
+									authToken: string;
+								}>;
+							},
+						) => {
+							reconnect = options?.reconnect;
+							return {
+								close() {},
+								getStatus() {
+									return {
+										state: "connected" as const,
+										reconnectAttempts: 0,
+										baseUrl: "http://127.0.0.1:4317",
+									};
+								},
+							};
+						},
+					}) as unknown as BrowserBrokerClient,
+				loadClient: async () =>
+					({
+						registerSession: async (input: { sessionId: string }) => {
+							rediscoveredRegisterSessionId = input.sessionId;
+						},
+						getConnectionInfo: () => ({
+							baseUrl: "http://127.0.0.1:5522",
+							authToken: "token-2",
+						}),
+					}) as unknown as BrowserBrokerClient,
+				setActiveFeedbackSubscription: () => {},
+			},
+		);
+
+		expect(initialRegisterCount).toBe(1);
+		expect(reconnect).toBeDefined();
+		await expect(reconnect?.()).resolves.toEqual({
+			baseUrl: "http://127.0.0.1:5522",
+			authToken: "token-2",
+		});
+		expect(rediscoveredRegisterSessionId).toBe("ses_1");
+	});
+
+	test("/bf status still reports reconnecting when broker rediscovery fails", async () => {
+		const notify = createNotifyHarness();
+		await handleBfCommand(
+			"status",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				loadClient: async () => undefined,
+				getInProcessBrokerStatus: () => ({
+					running: false,
+				}),
+				getActiveConnectionStatus: () => ({
+					state: "reconnecting",
+					reconnectAttempts: 3,
+					baseUrl: "http://127.0.0.1:4317",
+				}),
+			},
+		);
+
+		expect(notify.last()).toContain("Connection: reconnecting");
+		expect(notify.last()).toContain("Reconnect attempts: 3");
+	});
 
 	test("/bf broker start uses the injected ensureBrokerRunning dependency", async () => {
 		const notify = createNotifyHarness();
@@ -256,6 +348,33 @@ describe("handleBfCommand", () => {
 
 		expect(injectedCalls).toBe(1);
 		expect(notify.last()).toContain("http://127.0.0.1:4318");
+	});
+	test("/bf status reports the live reconnect state and attempt count", async () => {
+		const notify = createNotifyHarness();
+		await handleBfCommand(
+			"status",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				loadClient: async () =>
+					({
+						listSessions: async () => [{ sessionId: "ses_1" }],
+					}) as BrowserBrokerClient,
+				getInProcessBrokerStatus: () => ({
+					running: true,
+					baseUrl: "http://127.0.0.1:4317",
+					port: 4317,
+				}),
+				getActiveConnectionStatus: () => ({
+					state: "reconnecting",
+					reconnectAttempts: 2,
+					baseUrl: "http://127.0.0.1:4317",
+				}),
+			},
+		);
+
+		expect(notify.last()).toContain("Connection: reconnecting");
+		expect(notify.last()).toContain("Reconnect attempts: 2");
 	});
 });
 

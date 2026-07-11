@@ -8,12 +8,34 @@ import {
 	setActiveFeedbackSubscription,
 	stopActiveBroker,
 } from "./broker-lifecycle";
-import { BrowserBrokerClient } from "./client";
+import {
+	BrowserBrokerClient,
+	type BrowserFeedbackConnectionStatus,
+	createBrowserBrokerClientFromDiscovery,
+} from "./client";
 import { handleBfCommand } from "./commands";
 import { readConfig } from "./config";
 import { formatFeedbackAsPrompt } from "./renderer";
 
 type OnFeedbackFn = (event: BrowserFeedbackEvent) => void;
+
+function renderBrowserStatus(status: BrowserFeedbackConnectionStatus): string {
+	if (status.state === "connected") {
+		try {
+			const port = new URL(status.baseUrl).port;
+			return `Browser: connected${port ? ` (:${port})` : ""}`;
+		} catch {
+			return `Browser: connected (${status.baseUrl})`;
+		}
+	}
+	if (status.state === "reconnecting") {
+		return "Browser: reconnecting…";
+	}
+	if (status.state === "connecting") {
+		return "Browser: connecting…";
+	}
+	return "Browser: offline";
+}
 
 export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 	pi.setLabel("Browser Feedback");
@@ -45,24 +67,39 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 			const result = await ensureBrokerRunning();
 			const sessionId = ctx.sessionManager.getSessionId();
 			const sessionName = ctx.sessionManager.getSessionName() ?? sessionId;
+			const registerWith = async (client: BrowserBrokerClient) => {
+				await client.registerSession({
+					sessionId,
+					sessionName,
+					displayName: sessionName,
+					cwd: ctx.cwd,
+					status: "active",
+					lastActiveAt: new Date().toISOString(),
+					processId: process.pid,
+				});
+			};
+			const updateStatus = (status: BrowserFeedbackConnectionStatus) => {
+				if (ctx.hasUI) {
+					ctx.ui.setStatus("browser-feedback", renderBrowserStatus(status));
+				}
+			};
 			const client = new BrowserBrokerClient({
 				baseUrl: result.baseUrl,
 				authToken: result.authToken,
 			});
-			await client.registerSession({
-				sessionId,
-				sessionName,
-				displayName: sessionName,
-				cwd: ctx.cwd,
-				status: "active",
-				lastActiveAt: new Date().toISOString(),
-				processId: process.pid,
+			await registerWith(client);
+			const sub = client.subscribeFeedback(sessionId, onFeedback, {
+				onStateChange: updateStatus,
+				reconnect: async () => {
+					const rediscovered = await createBrowserBrokerClientFromDiscovery();
+					if (!rediscovered) {
+						throw new Error("Browser broker discovery unavailable");
+					}
+					await registerWith(rediscovered);
+					return rediscovered.getConnectionInfo();
+				},
 			});
-			const sub = client.subscribeFeedback(sessionId, onFeedback);
 			setActiveFeedbackSubscription(sub);
-			if (ctx.hasUI) {
-				ctx.ui.setStatus("browser-feedback", `Browser: ${result.baseUrl}`);
-			}
 		} catch {
 			// broker unavailable; user can connect manually with /bf connect
 		}
