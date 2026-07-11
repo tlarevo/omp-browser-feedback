@@ -1,7 +1,7 @@
 {
 	"type": "module",
 	"name": "omp-browser-feedback",
-	"version": "0.0.6",
+	"version": "0.0.7",
 	"description": "OMP extension for browser DOM feedback via the Chrome extension and local broker",
 	"homepage": "https://omp.sh",
 	"repository": {
