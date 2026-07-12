@@ -12,7 +12,10 @@ import {
 	writeDiscoveryFile,
 } from "@oh-my-pi/browser-broker";
 import { BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
-import type { BrowserFeedbackSubscription } from "./client";
+import type {
+	BrowserFeedbackConnectionStatus,
+	BrowserFeedbackSubscription,
+} from "./client";
 
 export type { BrokerPortOptions };
 
@@ -140,6 +143,11 @@ export function setActiveFeedbackSubscription(
 export function clearActiveFeedbackSubscription(): void {
 	_activeSubscription?.close();
 	_activeSubscription = undefined;
+}
+export function getActiveFeedbackConnectionStatus():
+	| BrowserFeedbackConnectionStatus
+	| undefined {
+	return _activeSubscription?.getStatus();
 }
 
 export async function stopActiveBroker(): Promise<boolean> {

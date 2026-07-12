@@ -3,12 +3,14 @@ import type { ExtensionCommandContext } from "@oh-my-pi/pi-coding-agent";
 import {
 	clearActiveFeedbackSubscription,
 	ensureBrokerRunning,
+	getActiveFeedbackConnectionStatus,
 	getInProcessBrokerStatus,
 	setActiveFeedbackSubscription,
 	stopActiveBroker,
 } from "./broker-lifecycle";
 import {
 	BrowserBrokerClient,
+	type BrowserFeedbackConnectionStatus,
 	createBrowserBrokerClientFromDiscovery,
 } from "./client";
 import { readConfig, writeConfig } from "./config";
@@ -24,6 +26,8 @@ export interface HandleBfCommandDependencies {
 		authToken: string;
 	}) => BrowserBrokerClient;
 	setActiveFeedbackSubscription?: typeof setActiveFeedbackSubscription;
+	getInProcessBrokerStatus?: typeof getInProcessBrokerStatus;
+	getActiveConnectionStatus?: typeof getActiveFeedbackConnectionStatus;
 }
 
 function parseBrokerStartArgs(argsAfterStart: string): {
@@ -36,6 +40,12 @@ function parseBrokerStartArgs(argsAfterStart: string): {
 		port: portMatch ? Number(portMatch[1]) : undefined,
 		portRange: rangeMatch ? rangeMatch[1] : undefined,
 	};
+}
+
+function renderConnectionState(
+	state: BrowserFeedbackConnectionStatus["state"],
+): string {
+	return state === "closed" ? "offline" : state;
 }
 
 export async function handleBfCommand(
@@ -56,22 +66,39 @@ export async function handleBfCommand(
 			new BrowserBrokerClient({ baseUrl, authToken }));
 	const setSubscription =
 		deps.setActiveFeedbackSubscription ?? setActiveFeedbackSubscription;
+	const getBrokerStatus =
+		deps.getInProcessBrokerStatus ?? getInProcessBrokerStatus;
+	const getConnectionStatus =
+		deps.getActiveConnectionStatus ?? getActiveFeedbackConnectionStatus;
 
 	async function registerCurrentSession(
 		client: BrowserBrokerClient,
 		sessionId: string,
 		sessionName: string,
 	) {
-		await client.registerSession({
-			sessionId,
-			sessionName,
-			displayName: sessionName,
-			cwd: ctx.cwd,
-			status: "active",
-			lastActiveAt: new Date().toISOString(),
-			processId: process.pid,
+		const registerWith = async (activeClient: BrowserBrokerClient) => {
+			await activeClient.registerSession({
+				sessionId,
+				sessionName,
+				displayName: sessionName,
+				cwd: ctx.cwd,
+				status: "active",
+				lastActiveAt: new Date().toISOString(),
+				processId: process.pid,
+			});
+		};
+
+		await registerWith(client);
+		const sub = client.subscribeFeedback(sessionId, onFeedback, {
+			reconnect: async () => {
+				const rediscovered = await loadClient();
+				if (!rediscovered) {
+					throw new Error("Browser broker discovery unavailable");
+				}
+				await registerWith(rediscovered);
+				return rediscovered.getConnectionInfo();
+			},
 		});
-		const sub = client.subscribeFeedback(sessionId, onFeedback);
 		setSubscription(sub);
 	}
 
@@ -102,7 +129,7 @@ export async function handleBfCommand(
 			);
 			return;
 		}
-		const inProcess = getInProcessBrokerStatus();
+		const inProcess = getBrokerStatus();
 		notify(
 			inProcess.running
 				? `Browser broker running at ${inProcess.baseUrl} (in-process, port ${inProcess.port}).`
@@ -155,13 +182,23 @@ export async function handleBfCommand(
 	}
 
 	if (first === "status") {
-		const inProcess = getInProcessBrokerStatus();
+		const inProcess = getBrokerStatus();
 		const client = await loadClient();
+		const connection = getConnectionStatus();
+		const connectionLines = connection
+			? [
+					`Connection: ${renderConnectionState(connection.state)} (${connection.baseUrl})`,
+					`Reconnect attempts: ${connection.reconnectAttempts}`,
+				]
+			: ["Connection: offline", "Reconnect attempts: 0"];
 		if (!client) {
 			notify(
-				inProcess.running
-					? `Browser broker running at ${inProcess.baseUrl}. Session not registered — run \`/bf connect\`.`
-					: "Browser broker is not running. Use `/bf broker start` then `/bf connect`.",
+				[
+					inProcess.running
+						? `Broker: running at ${inProcess.baseUrl}. Session not registered — run \`/bf connect\`.`
+						: "Broker: external connection unavailable.",
+					...connectionLines,
+				].join("\n"),
 			);
 			return;
 		}
@@ -175,6 +212,7 @@ export async function handleBfCommand(
 					inProcess.running
 						? `Broker: running at ${inProcess.baseUrl} (in-process)`
 						: "Broker: external (discovery file)",
+					...connectionLines,
 					`Session: ${registered ? "registered" : "not registered"} (ID: ${sessionId})`,
 					`Active sessions: ${sessions.length}`,
 					`Auto-run: ${config.autoRun ? "on" : "off"} (toggle with \`/bf settings auto-run on|off\`)`,
