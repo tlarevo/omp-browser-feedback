@@ -2,3 +2,9 @@ node_modules/
 dist/
 .DS_Store
 *.local
+.claude/
+.codex/
+.cursor/
+.opencode/
+.omp/
+.agents/
