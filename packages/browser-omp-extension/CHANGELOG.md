@@ -1,5 +1,14 @@
 # Changelog
 
+
+## [0.0.8] - 2026-07-12
+
+### Changed
+
+- reconnect browser feedback subscriptions automatically after broker disconnects
+- rediscover broker credentials and re-register the active session before reopening feedback streams
+- surface live connection state and reconnect attempts in `/bf status` and the extension statusline
+- bound the feedback event dedupe cache to avoid unbounded growth in long-lived sessions
 ## [0.0.7] - 2026-07-11
 
 ### Changed
