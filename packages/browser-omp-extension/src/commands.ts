@@ -5,6 +5,7 @@ import {
 	ensureBrokerRunning,
 	getActiveFeedbackConnectionStatus,
 	getInProcessBrokerStatus,
+	getStatusChangeCallback,
 	setActiveFeedbackSubscription,
 	stopActiveBroker,
 } from "./broker-lifecycle";
@@ -87,8 +88,10 @@ export async function handleBfCommand(
 				processId: process.pid,
 			});
 		};
-
 		await registerWith(client);
+		// Close old subscription after successful registration to prevent
+		// stale "closed" from overwriting the new subscription's "connecting".
+		clearActiveFeedbackSubscription();
 		const sub = client.subscribeFeedback(sessionId, onFeedback, {
 			reconnect: async () => {
 				const rediscovered = await loadClient();
@@ -98,6 +101,7 @@ export async function handleBfCommand(
 				await registerWith(rediscovered);
 				return rediscovered.getConnectionInfo();
 			},
+			onStateChange: getStatusChangeCallback(),
 		});
 		setSubscription(sub);
 	}
@@ -109,9 +113,7 @@ export async function handleBfCommand(
 			try {
 				const result = await ensureBroker({ port, portRange });
 				notify(
-					result.reused
-						? `Browser broker already running at ${result.baseUrl} (port ${result.port}).`
-						: `Browser broker started at ${result.baseUrl} (port ${result.port}).`,
+					`Browser broker ${result.reused ? "already running" : "started"} at ${result.baseUrl} (port ${result.port}). Run \`/bf connect\` to register your session.`,
 				);
 			} catch (err) {
 				notify(
@@ -220,7 +222,10 @@ export async function handleBfCommand(
 			);
 		} catch (err) {
 			notify(
-				`Broker reachable but status check failed: ${err instanceof Error ? err.message : String(err)}`,
+				[
+					`Broker reachable but status check failed: ${err instanceof Error ? err.message : String(err)}`,
+					...connectionLines,
+				].join("\n"),
 			);
 		}
 		return;

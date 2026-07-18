@@ -313,3 +313,109 @@ describe("ensureBrokerRunning (real sockets)", () => {
 		}
 	});
 });
+describe("broker restart integration", () => {
+	let dir: string;
+	let discoveryPath: string;
+
+	beforeEach(async () => {
+		dir = await fs.mkdtemp(path.join(os.tmpdir(), "bf-restart-"));
+		discoveryPath = path.join(dir, "broker.json");
+	});
+
+	afterEach(async () => {
+		await stopActiveBroker();
+		await fs.rm(dir, { recursive: true, force: true });
+	});
+	test("same-port restart: new broker on the same port is discovered after old stops", async () => {
+		// Start broker A
+		const resultA = await ensureBrokerRunning(
+			{ discoveryPath, portRange: "48100-48199" },
+			isolate,
+		);
+		const portA = resultA.port;
+
+		// Stop broker A
+		await stopActiveBroker();
+
+		// Start broker B on the same port
+		const resultB = await ensureBrokerRunning(
+			{ discoveryPath, port: portA },
+			{ ...isolate },
+		);
+		expect(resultB.port).toBe(portA);
+		expect(resultB.reused).toBe(false);
+
+		// Verify the new broker is reachable
+		const health = await fetch(`${resultB.baseUrl}/api/health`);
+		expect(health.ok).toBe(true);
+	});
+
+	test("different-port restart: new broker on a different port is found via discovery", async () => {
+		// Start broker A on a specific port
+		const occupied = await occupy();
+		try {
+			const resultA = await ensureBrokerRunning(
+				{
+					discoveryPath,
+					portRange: `${occupied.assignedPort + 1}-${occupied.assignedPort + 10}`,
+				},
+				isolate,
+			);
+			const _portA = resultA.port;
+
+			// Stop broker A
+			await stopActiveBroker();
+			await closeServer(occupied);
+
+			// Start broker B on a different port
+			const resultB = await ensureBrokerRunning(
+				{
+					discoveryPath,
+					portRange: `${occupied.assignedPort + 1}-${occupied.assignedPort + 10}`,
+				},
+				{ ...isolate },
+			);
+			// Should find the new broker (may be same or different port depending on availability)
+			expect(resultB.reused).toBe(false);
+			const health = await fetch(`${resultB.baseUrl}/api/health`);
+			expect(health.ok).toBe(true);
+		} finally {
+			await closeServer(occupied);
+		}
+	});
+
+	test("same-port restart with new token: discovery file updated by new broker", async () => {
+		// Start broker A
+		const resultA = await ensureBrokerRunning(
+			{ discoveryPath, portRange: "48200-48299" },
+			isolate,
+		);
+		const portA = resultA.port;
+
+		// Stop broker A
+		await stopActiveBroker();
+
+		// Write a discovery file with a different token (simulating new broker)
+		await writeDiscoveryFile(discoveryPath, {
+			protocol_version: BROWSER_PROTOCOL_VERSION,
+			broker_id: "local",
+			host: "127.0.0.1",
+			port: portA,
+			base_url: `http://127.0.0.1:${portA}`,
+			ws_url: `ws://127.0.0.1:${portA}`,
+			auth_token: "new-token-after-restart",
+			pid: process.pid,
+			started_at: new Date().toISOString(),
+		});
+
+		// Start broker B on the same port
+		const resultB = await ensureBrokerRunning(
+			{ discoveryPath, port: portA },
+			{ ...isolate },
+		);
+		expect(resultB.port).toBe(portA);
+		// The new broker should have its own token, not the discovery file's token
+		expect(resultB.authToken).not.toBe("new-token-after-restart");
+		expect(resultB.authToken).toBeTruthy();
+	});
+});

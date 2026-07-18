@@ -4,8 +4,10 @@ import type {
 	ExtensionCommandContext,
 } from "@oh-my-pi/pi-coding-agent";
 import {
+	clearStatusChangeCallback,
 	ensureBrokerRunning,
 	setActiveFeedbackSubscription,
+	setStatusChangeCallback,
 	stopActiveBroker,
 } from "./broker-lifecycle";
 import {
@@ -63,6 +65,12 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
 		_capturedCtx = ctx;
 		const onFeedback = makeOnFeedback();
+		const updateStatus = (status: BrowserFeedbackConnectionStatus) => {
+			if (ctx.hasUI) {
+				ctx.ui.setStatus("browser-feedback", renderBrowserStatus(status));
+			}
+		};
+		setStatusChangeCallback(updateStatus);
 		try {
 			const result = await ensureBrokerRunning();
 			const sessionId = ctx.sessionManager.getSessionId();
@@ -77,11 +85,6 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 					lastActiveAt: new Date().toISOString(),
 					processId: process.pid,
 				});
-			};
-			const updateStatus = (status: BrowserFeedbackConnectionStatus) => {
-				if (ctx.hasUI) {
-					ctx.ui.setStatus("browser-feedback", renderBrowserStatus(status));
-				}
 			};
 			const client = new BrowserBrokerClient({
 				baseUrl: result.baseUrl,
@@ -107,6 +110,7 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 
 	pi.on("session_shutdown", async () => {
 		_capturedCtx = undefined;
+		clearStatusChangeCallback();
 		await stopActiveBroker();
 	});
 
