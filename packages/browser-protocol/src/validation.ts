@@ -1,7 +1,18 @@
 import { type Type, type } from "arktype";
+<<<<<<< HEAD
 import { BROWSER_FEEDBACK_LIMITS, codePointLength } from "./limits";
 import type {
 	BrowserFeedbackAck,
+=======
+import { BATCH_FEEDBACK_LIMITS } from "./limits";
+import {
+	batchFeedbackSchema,
+	browserFeedbackEventSchema,
+	browserSessionRegistrationSchema,
+} from "./schemas";
+import type {
+	BatchFeedback,
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 	BrowserFeedbackEvent,
 	BrowserProtocolVersion,
 	BrowserSessionRegistration,
@@ -181,4 +192,25 @@ export function checkFeedbackLimits(
 	}
 
 	return violations;
+}
+
+export function validateBatchFeedback(
+	value: unknown,
+): BrowserValidationResult<BatchFeedback> {
+	const schemaResult = validateWithSchema<BatchFeedback>(
+		batchFeedbackSchema,
+		value,
+	);
+	if (!schemaResult.ok) return schemaResult;
+	const batch = schemaResult.value;
+	if (batch.items.length === 0) {
+		return { ok: false, error: "Batch must contain at least one item" };
+	}
+	if (batch.items.length > BATCH_FEEDBACK_LIMITS.maxItems) {
+		return {
+			ok: false,
+			error: `Batch exceeds maximum of ${BATCH_FEEDBACK_LIMITS.maxItems} items`,
+		};
+	}
+	return { ok: true, value: batch };
 }

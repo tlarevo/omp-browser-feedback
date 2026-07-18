@@ -6,6 +6,7 @@ import {
 } from "@oh-my-pi/browser-protocol";
 import { listSessions, redeemPairingCode } from "../background";
 import {
+	type BasketState,
 	ensureBrowserInstallId,
 	type PopupActionHandlers,
 	type PopupState,
@@ -84,6 +85,37 @@ function isUnauthorizedError(errorMessage: string | undefined): boolean {
 				errorMessage.toLowerCase().includes("unauthorized")),
 	);
 }
+interface RawBasketItem {
+	itemId: string;
+	event: {
+		element: {
+			tagName: string;
+			selector: string;
+			text?: string;
+		};
+	};
+	note: string;
+}
+
+interface RawBasketFromBackground {
+	items: RawBasketItem[];
+	batchNote: string;
+	error?: string;
+}
+
+function toBasketState(raw: RawBasketFromBackground): BasketState {
+	return {
+		items: raw.items.map((item) => ({
+			itemId: item.itemId,
+			tagName: item.event.element.tagName,
+			selector: item.event.element.selector,
+			note: item.note,
+			text: item.event.element.text,
+		})),
+		batchNote: raw.batchNote,
+		error: raw.error,
+	};
+}
 
 async function initPopup(): Promise<void> {
 	const root = document.getElementById("app");
@@ -105,8 +137,18 @@ async function initPopup(): Promise<void> {
 	let currentBaseUrl = "";
 	let currentCapabilityToken = "";
 	let currentSessions: BrowserSessionRegistration[] = [];
+	let currentBasket: BasketState | undefined;
 	let currentSelectedId: string | undefined;
 
+	function renderReady(): void {
+		render({
+			kind: "ready",
+			baseUrl: currentBaseUrl,
+			selectedSessionId: currentSelectedId,
+			sessions: currentSessions,
+			basket: currentBasket,
+		});
+	}
 	const handlers: PopupActionHandlers = {
 		async onPairWithCode(code) {
 			const trimmedCode = code.trim();
@@ -150,12 +192,7 @@ async function initPopup(): Promise<void> {
 		async onSelectSession(sessionId) {
 			currentSelectedId = sessionId;
 			await writeStorage({ selectedSessionId: sessionId });
-			render({
-				kind: "ready",
-				baseUrl: currentBaseUrl,
-				selectedSessionId: currentSelectedId,
-				sessions: currentSessions,
-			});
+			renderReady();
 		},
 
 		async onStartPicker(sessionId, note) {
@@ -171,9 +208,44 @@ async function initPopup(): Promise<void> {
 			});
 			window.close();
 		},
+<<<<<<< HEAD
 		async onRetry() {
 			render({ kind: "loading" });
 			await refreshFromBroker();
+=======
+
+		async onStartMultiPick(sessionId) {
+			const session = currentSessions.find(
+				(item) => item.sessionId === sessionId,
+			);
+			if (!session) return;
+			await sendToBackground({
+				type: "omp:start-picker",
+				channelId: session.channelId,
+				baseUrl: currentBaseUrl,
+				multiPick: true,
+			});
+			window.close();
+		},
+
+		async onSubmitBatch() {
+			await sendToBackground({ type: "omp:submit-batch" });
+			window.close();
+		},
+
+		async onRemoveBasketItem(itemId) {
+			await sendToBackground({ type: "omp:remove-from-basket", itemId });
+			const basketResult = await sendToBackground<{
+				ok: boolean;
+				data: RawBasketFromBackground;
+			}>({
+				type: "omp:get-basket",
+			});
+			if (basketResult.ok) {
+				currentBasket = toBasketState(basketResult.data);
+			}
+			renderReady();
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 		},
 	};
 	// If background wrote a pickerHint (e.g. shortcut fired with no session),
@@ -239,12 +311,17 @@ async function initPopup(): Promise<void> {
 			return;
 		}
 
-		render({
-			kind: "ready",
-			baseUrl: currentBaseUrl,
-			selectedSessionId: currentSelectedId,
-			sessions: currentSessions,
+		const basketResult = await sendToBackground<{
+			ok: boolean;
+			data: RawBasketFromBackground;
+		}>({
+			type: "omp:get-basket",
 		});
+		if (basketResult.ok) {
+			currentBasket = toBasketState(basketResult.data);
+		}
+
+		renderReady();
 	}
 
 	render({ kind: "loading" });

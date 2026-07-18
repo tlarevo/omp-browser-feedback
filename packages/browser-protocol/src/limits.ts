@@ -22,6 +22,7 @@ export const BROWSER_FEEDBACK_LIMITS = {
 	maxMultipartBytes: 10 * 1024 * 1024 + 512 * 1024 + 64 * 1024,
 } as const;
 
+<<<<<<< HEAD
 /** Marker appended to client-truncated DOM-derived fields; counts toward the cap. */
 export const BROWSER_FEEDBACK_TRUNCATION_MARKER = "…[truncated]";
 
@@ -90,3 +91,8 @@ export function capEntriesByPriority(
 	}
 	return result;
 }
+=======
+export const BATCH_FEEDBACK_LIMITS = {
+	maxItems: 20,
+} as const;
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and

@@ -1,5 +1,7 @@
 import * as net from "node:net";
 import {
+	BATCH_FEEDBACK_LIMITS,
+	type BatchFeedback,
 	BROWSER_BROKER_SERVICE,
 	BROWSER_FEEDBACK_LIMITS,
 	BROWSER_PROTOCOL_VERSION,
@@ -144,6 +146,7 @@ async function parseFeedbackRequest(
 	} catch {
 		throw new InvalidFeedbackError("Malformed event JSON part");
 	}
+<<<<<<< HEAD
 	const screenshotPart = form.get("screenshot");
 	if (screenshotPart instanceof Blob) {
 		const bytes = new Uint8Array(await screenshotPart.arrayBuffer());
@@ -151,6 +154,52 @@ async function parseFeedbackRequest(
 			throw new PayloadTooLargeError("Screenshot exceeds byte limit");
 		}
 		return { event, screenshotBytes: bytes };
+=======
+	const parsed = JSON.parse(eventPart) as Record<string, unknown>;
+
+	if (parsed.type === "batch.feedback") {
+		const batch = parsed as unknown as BatchFeedback;
+		const savedItems = [...batch.items];
+		let hasChanges = false;
+		for (let i = 0; i < savedItems.length; i++) {
+			const screenshotPart = form.get(`screenshot_${i}`);
+			const existingScreenshot = savedItems[i].screenshot;
+			if (screenshotPart instanceof Blob && existingScreenshot) {
+				const saved = await screenshots.save({
+					eventId: `${batch.eventId}_item_${i}`,
+					mimeType: existingScreenshot.mimeType,
+					bytes: new Uint8Array(await screenshotPart.arrayBuffer()),
+				});
+				savedItems[i] = {
+					...savedItems[i],
+					screenshot: { ...existingScreenshot, ref: saved.ref },
+				};
+				hasChanges = true;
+			}
+		}
+		return hasChanges ? { ...batch, items: savedItems } : batch;
+	}
+
+	const event = parsed as unknown as BrowserFeedbackEvent;
+	const screenshotPart = form.get("screenshot");
+	if (
+		event.type === "dom.selection" &&
+		screenshotPart instanceof Blob &&
+		event.screenshot
+	) {
+		const saved = await screenshots.save({
+			eventId: event.eventId,
+			mimeType: event.screenshot.mimeType,
+			bytes: new Uint8Array(await screenshotPart.arrayBuffer()),
+		});
+		return {
+			...event,
+			screenshot: {
+				...event.screenshot,
+				ref: saved.ref,
+			},
+		};
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 	}
 	return { event };
 }
@@ -455,6 +504,7 @@ export async function createBrowserBrokerServer(
 						{ status: 401 },
 					);
 				}
+<<<<<<< HEAD
 				let parsed: ParsedFeedbackRequest;
 				try {
 					parsed = await parseFeedbackRequest(request);
@@ -493,11 +543,16 @@ export async function createBrowserBrokerServer(
 				}
 				// Step 1: Validate the Chrome payload at its declared version.
 				const result = validateFeedbackEvent(raw, declaredVersion);
+=======
+				const raw = await readFeedbackRequest(request, screenshots);
+				const result = validateFeedbackEvent(raw);
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 				if (!result.ok)
 					return jsonResponse(
 						{ ok: false, code: "invalid_feedback", message: result.error },
 						{ status: 400 },
 					);
+<<<<<<< HEAD
 				const violations = checkFeedbackLimits(result.value);
 				const violation = violations[0];
 				if (violation)
@@ -512,6 +567,27 @@ export async function createBrowserBrokerServer(
 						{ status: 422 },
 					);
 				// Step 2: Look up the target OMP session and gate delivery.
+=======
+				if (
+					result.value.type === "batch.feedback" &&
+					result.value.items.length > BATCH_FEEDBACK_LIMITS.maxItems
+				) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "batch_too_large",
+							message: `Batch exceeds maximum of ${BATCH_FEEDBACK_LIMITS.maxItems} items`,
+						},
+						{ status: 400 },
+					);
+				}
+				feedback.add({
+					channelId: result.value.channelId,
+					eventId: result.value.eventId,
+					createdAt: result.value.createdAt,
+					payload: result.value,
+				});
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 				const session = registry.getByChannelId(result.value.channelId);
 				let wirePayload: BrowserFeedbackEvent = result.value;
 				if (session && session.negotiatedProtocolVersion < 2) {

@@ -1,5 +1,12 @@
+<<<<<<< HEAD
 import type { BrowserFeedbackEvent } from "@oh-my-pi/browser-protocol";
 
+=======
+import type {
+	BrowserFeedbackEvent,
+	DomSelectionFeedback,
+} from "@oh-my-pi/browser-protocol";
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 import { activatePickerAndCapture, type PickerHandle } from "./content-script";
 import {
 	createToolbar,
@@ -15,6 +22,7 @@ import {
 } from "./toolbar";
 
 let activePickerHandle: PickerHandle | undefined;
+<<<<<<< HEAD
 let pendingPickerResponse: ((response: unknown) => void) | undefined;
 let toolbarState = createToolbarState();
 let toolbarHandle: ToolbarHandle | undefined;
@@ -80,6 +88,9 @@ function deactivateActivePicker(): boolean {
 	}
 	return true;
 }
+=======
+let basketMode = false;
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 
 chrome.runtime.onMessage.addListener(
 	(
@@ -88,19 +99,30 @@ chrome.runtime.onMessage.addListener(
 		sendResponse: (response: unknown) => void,
 	) => {
 		if (message.type === "omp:activate-picker") {
+<<<<<<< HEAD
 			const channelId =
 				typeof message.channelId === "string" ? message.channelId : undefined;
 			if (!channelId) {
 				sendResponse({ ok: false, error: "Missing channel id" });
 				return false;
 			}
+=======
+			const { channelId, note, multiPick } = message as {
+				channelId: string;
+				note?: string;
+				multiPick?: boolean;
+				type: string;
+			};
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 
-			// Cancel any existing active picker before starting a new one
+			basketMode = !!multiPick;
+
 			if (activePickerHandle) {
 				activePickerHandle.deactivate();
 				activePickerHandle = undefined;
 			}
 
+<<<<<<< HEAD
 			const note = typeof message.note === "string" ? message.note : undefined;
 
 			// Create toolbar
@@ -148,6 +170,27 @@ chrome.runtime.onMessage.addListener(
 					if (toolbarState.noteEditing) {
 						toolbarState = confirmNote(toolbarState);
 						toolbarHandle?.update(toolbarState);
+=======
+			activePickerHandle = activatePickerAndCapture(
+				document,
+				{ channelId, note },
+				(event: BrowserFeedbackEvent | null) => {
+					if (basketMode) {
+						if (event && event.type === "dom.selection") {
+							chrome.runtime.sendMessage({
+								type: "omp:add-to-basket",
+								event: event as DomSelectionFeedback,
+								note: note ?? "",
+							});
+						}
+						// Keep picker active for multi-pick mode
+						chrome.runtime.sendMessage({ type: "omp:picker-ready" });
+						return;
+					}
+					activePickerHandle = undefined;
+					if (!event) {
+						sendResponse({ ok: false, error: "Picker cancelled" });
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 						return;
 					}
 					deactivatePicker();

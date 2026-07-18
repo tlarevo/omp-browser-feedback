@@ -50,14 +50,35 @@ export type PopupState =
 			baseUrl: string;
 			selectedSessionId?: string;
 			sessions: BrowserSessionRegistration[];
+			basket?: BasketState;
 	  }
 	| { kind: "error"; message: string };
+
+export interface BasketItemState {
+	itemId: string;
+	tagName: string;
+	selector: string;
+	note: string;
+	text?: string;
+}
+
+export interface BasketState {
+	items: BasketItemState[];
+	batchNote: string;
+	error?: string;
+}
 
 export interface PopupActionHandlers {
 	onPairWithCode?: (code: string) => void;
 	onSelectSession?: (sessionId: string) => void;
 	onStartPicker?: (sessionId: string, note?: string) => void;
+<<<<<<< HEAD
 	onRetry?: () => void;
+=======
+	onStartMultiPick?: (sessionId: string) => void;
+	onSubmitBatch?: () => void;
+	onRemoveBasketItem?: (itemId: string) => void;
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 }
 
 function clear(element: HTMLElement): void {
@@ -201,5 +222,61 @@ export function renderPopup(
 						)
 				: undefined,
 		),
+		createButton(
+			document,
+			"Pick multiple",
+			activeSessionId
+				? () => handlers.onStartMultiPick?.(activeSessionId)
+				: undefined,
+		),
 	);
+
+	const basket = state.basket;
+	if (basket && basket.items.length > 0) {
+		const basketSection = document.createElement("div");
+		basketSection.style.marginTop = "12px";
+		const heading = document.createElement("strong");
+		heading.textContent = `Basket (${basket.items.length} items)`;
+		basketSection.append(heading);
+
+		const basketList = document.createElement("ul");
+		basketList.style.listStyle = "none";
+		basketList.style.padding = "0";
+		basketList.style.margin = "4px 0";
+		for (const item of basket.items) {
+			const li = document.createElement("li");
+			li.style.fontSize = "12px";
+			li.style.padding = "2px 0";
+			const tag = item.tagName.toLowerCase();
+			const preview = item.text
+				? `<${tag}> ${item.text.slice(0, 30)}`
+				: `<${tag}> ${item.selector.slice(0, 40)}`;
+			const removeBtn = document.createElement("button");
+			removeBtn.textContent = "×";
+			removeBtn.style.marginLeft = "4px";
+			removeBtn.style.cursor = "pointer";
+			removeBtn.addEventListener("click", () =>
+				handlers.onRemoveBasketItem?.(item.itemId),
+			);
+			li.append(
+				document.createTextNode(
+					`${preview}${item.note ? ` — ${item.note}` : ""}`,
+				),
+				removeBtn,
+			);
+			basketList.append(li);
+		}
+		basketSection.append(basketList);
+
+		if (basket.error) {
+			const errDiv = document.createElement("div");
+			errDiv.style.color = "red";
+			errDiv.style.fontSize = "12px";
+			errDiv.textContent = basket.error;
+			basketSection.append(errDiv);
+		}
+
+		root.append(basketSection);
+		root.append(createButton(document, "Send batch", handlers.onSubmitBatch));
+	}
 }

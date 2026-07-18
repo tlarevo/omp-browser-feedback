@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 import {
 	DEFAULT_BROWSER_BROKER_PORT_RANGE,
 	parsePortRange,
@@ -5,6 +6,13 @@ import {
 	type BrowserFeedbackEvent,
 	type BrowserSessionRegistration,
 	type DomSelectionFeedback,
+=======
+import type {
+	BatchFeedback,
+	BrowserFeedbackEvent,
+	BrowserSessionRegistration,
+	DomSelectionFeedback,
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 } from "@oh-my-pi/browser-protocol";
 import {
 	discoverBroker,
@@ -13,9 +21,17 @@ import {
 	submitFeedback,
 } from "./background";
 import {
+<<<<<<< HEAD
 	type ComponentDetectionResult,
 	detectFrameworkComponent,
 } from "./component-detection";
+=======
+	addItemToBasket,
+	type Basket,
+	createEmptyBasket,
+	removeItemFromBasket,
+} from "./basket";
+>>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 import { captureAndCrop } from "./screenshot";
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -113,11 +129,13 @@ async function handleStartPicker(
 	channelId: string,
 	note: string | undefined,
 	tabId: number,
+	multiPick?: boolean,
 ): Promise<void> {
 	await chrome.tabs.sendMessage(tabId, {
 		type: "omp:activate-picker",
 		channelId,
 		note,
+		multiPick,
 	});
 }
 
@@ -206,6 +224,168 @@ async function handleElementSelected(
 			event: eventToSubmit,
 			screenshot,
 		});
+		return { ok: true, data: undefined };
+	} catch (error) {
+		return { ok: false, error: String(error) };
+	}
+}
+function readBasketFromStorage(stored: Record<string, unknown>): Basket {
+	const raw = stored.basket;
+	if (
+		typeof raw === "object" &&
+		raw !== null &&
+		"items" in raw &&
+		Array.isArray(raw.items)
+	) {
+		return raw as Basket;
+	}
+	return createEmptyBasket();
+}
+
+async function addToBasket(
+	event: DomSelectionFeedback,
+	note: string,
+): Promise<MessageResponse<Basket>> {
+	try {
+		const stored = await chrome.storage.local.get(["basket"]);
+		const basket = readBasketFromStorage(stored);
+		const updated = addItemToBasket(basket, event, note);
+		await setStorage({ basket: updated });
+		return { ok: true, data: updated };
+	} catch (error) {
+		return { ok: false, error: String(error) };
+	}
+}
+
+async function getBasket(): Promise<MessageResponse<Basket>> {
+	try {
+		const stored = await chrome.storage.local.get(["basket"]);
+		const basket = readBasketFromStorage(stored);
+		return { ok: true, data: basket };
+	} catch (error) {
+		return { ok: false, error: String(error) };
+	}
+}
+
+async function removeFromBasket(
+	itemId: string,
+): Promise<MessageResponse<Basket>> {
+	try {
+		const stored = await chrome.storage.local.get(["basket"]);
+		const basket = readBasketFromStorage(stored);
+		const updated = removeItemFromBasket(basket, itemId);
+		await setStorage({ basket: updated });
+		return { ok: true, data: updated };
+	} catch (error) {
+		return { ok: false, error: String(error) };
+	}
+}
+
+async function clearBasket(): Promise<MessageResponse<Basket>> {
+	try {
+		const updated = createEmptyBasket();
+		await setStorage({ basket: updated });
+		return { ok: true, data: updated };
+	} catch (error) {
+		return { ok: false, error: String(error) };
+	}
+}
+
+async function submitBatch(
+	windowId: number | undefined,
+): Promise<MessageResponse<void>> {
+	try {
+		const stored = await chrome.storage.local.get([
+			"brokerBaseUrl",
+			"browserCapabilityToken",
+			"basket",
+		]);
+		const baseUrl =
+			typeof stored.brokerBaseUrl === "string"
+				? stored.brokerBaseUrl
+				: undefined;
+		const capabilityToken =
+			typeof stored.browserCapabilityToken === "string"
+				? stored.browserCapabilityToken
+				: undefined;
+		const basket = readBasketFromStorage(stored);
+		if (!baseUrl || !capabilityToken) {
+			return { ok: false, error: "Browser is not paired" };
+		}
+		if (basket.items.length === 0) {
+			return { ok: false, error: "Basket is empty" };
+		}
+
+		const items = [...basket.items];
+		const screenshots: Array<{ index: number; blob: Blob }> = [];
+		for (let i = 0; i < items.length; i++) {
+			const item = items[i];
+			if (windowId !== undefined) {
+				const captured = await captureAndCrop(
+					windowId,
+					item.event.element.bounds,
+					item.event.page.viewport.devicePixelRatio,
+				).catch(() => undefined);
+				if (captured) {
+					screenshots.push({ index: i, blob: captured.blob });
+					items[i] = {
+						...item,
+						event: {
+							...item.event,
+							screenshot: {
+								kind: captured.kind,
+								ref: `pending_${i}`,
+								mimeType: "image/png",
+								width: captured.width,
+								height: captured.height,
+							},
+						},
+					};
+				}
+			}
+		}
+
+		const batchEvent: BatchFeedback = {
+			protocolVersion: 1,
+			eventId: crypto.randomUUID(),
+			type: "batch.feedback",
+			channelId: items[0].event.channelId,
+			createdAt: new Date().toISOString(),
+			items: items.map((item) => item.event),
+			...(basket.batchNote ? { batchNote: basket.batchNote } : {}),
+		};
+
+		if (screenshots.length > 0) {
+			const formData = new FormData();
+			formData.append("event", JSON.stringify(batchEvent));
+			for (const { index, blob } of screenshots) {
+				formData.append(`screenshot_${index}`, blob);
+			}
+			const response = await fetch(`${baseUrl}/api/feedback`, {
+				method: "POST",
+				headers: {
+					Authorization: `Bearer ${capabilityToken}`,
+				},
+				body: formData,
+			});
+			if (!response.ok) {
+				const body = await response.json().catch(() => ({}));
+				let errMsg = `HTTP ${response.status}`;
+				if (typeof body === "object" && body !== null && "message" in body) {
+					const msg = body.message;
+					if (typeof msg === "string") errMsg = msg;
+				}
+				return { ok: false, error: errMsg };
+			}
+		} else {
+			await submitFeedback({
+				baseUrl,
+				capabilityToken,
+				event: batchEvent as BrowserFeedbackEvent,
+			});
+		}
+
+		await setStorage({ basket: createEmptyBasket() });
 		return { ok: true, data: undefined };
 	} catch (error) {
 		return { ok: false, error: String(error) };
@@ -339,6 +519,7 @@ chrome.runtime.onMessage.addListener(
 			const baseUrl =
 				typeof message.baseUrl === "string" ? message.baseUrl : undefined;
 			const note = typeof message.note === "string" ? message.note : undefined;
+			const multiPick = message.multiPick === true;
 			if (!channelId || !baseUrl) {
 				sendResponse({ ok: false, error: "Missing picker context" });
 				return false;
@@ -352,7 +533,9 @@ chrome.runtime.onMessage.addListener(
 						return;
 					}
 					setStorage({ brokerBaseUrl: baseUrl })
-						.then(() => handleStartPicker(channelId, note, activeTabId))
+						.then(() =>
+							handleStartPicker(channelId, note, activeTabId, multiPick),
+						)
 						.then(() => sendResponse({ ok: true, data: undefined }))
 						.catch((error) =>
 							sendResponse({ ok: false, error: String(error) }),
@@ -361,7 +544,7 @@ chrome.runtime.onMessage.addListener(
 				return true;
 			}
 			setStorage({ brokerBaseUrl: baseUrl })
-				.then(() => handleStartPicker(channelId, note, tabId))
+				.then(() => handleStartPicker(channelId, note, tabId, multiPick))
 				.then(() => sendResponse({ ok: true, data: undefined }))
 				.catch((error) => sendResponse({ ok: false, error: String(error) }));
 			return true;
@@ -380,6 +563,38 @@ chrome.runtime.onMessage.addListener(
 				windowId,
 				tabId,
 			).then(sendResponse);
+			return true;
+		}
+		if (message.type === "omp:add-to-basket") {
+			const event = message.event as DomSelectionFeedback | undefined;
+			const note = typeof message.note === "string" ? message.note : "";
+			if (!event) {
+				sendResponse({ ok: false, error: "Missing feedback event" });
+				return false;
+			}
+			addToBasket(event, note).then(sendResponse);
+			return true;
+		}
+
+		if (message.type === "omp:get-basket") {
+			getBasket().then(sendResponse);
+			return true;
+		}
+
+		if (message.type === "omp:remove-from-basket") {
+			const itemId = typeof message.itemId === "string" ? message.itemId : "";
+			removeFromBasket(itemId).then(sendResponse);
+			return true;
+		}
+
+		if (message.type === "omp:clear-basket") {
+			clearBasket().then(sendResponse);
+			return true;
+		}
+
+		if (message.type === "omp:submit-batch") {
+			const windowId = sender.tab?.windowId;
+			submitBatch(windowId).then(sendResponse);
 			return true;
 		}
 
