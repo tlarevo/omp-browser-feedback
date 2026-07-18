@@ -29,6 +29,11 @@ export interface HandleBfCommandDependencies {
 	setActiveFeedbackSubscription?: typeof setActiveFeedbackSubscription;
 	getInProcessBrokerStatus?: typeof getInProcessBrokerStatus;
 	getActiveConnectionStatus?: typeof getActiveFeedbackConnectionStatus;
+	client?: BrowserBrokerClient;
+	submitFeedback?: (
+		text: string,
+		images?: Array<{ type: "image"; data: string; mimeType: string }>,
+	) => void;
 }
 
 function parseBrokerStartArgs(argsAfterStart: string): {
@@ -357,7 +362,25 @@ export async function handleBfCommand(
 			notify("No browser feedback received for this session.");
 			return;
 		}
-		notify(renderBrowserFeedbackContext(latest.payload));
+		const text = renderBrowserFeedbackContext(latest.payload);
+		if (deps.submitFeedback && latest.payload.screenshot) {
+			const image = await deps.client
+				?.fetchScreenshot(latest.payload.eventId)
+				.catch(() => undefined);
+			if (image) {
+				deps.submitFeedback(text, [
+					{
+						type: "image",
+						data: btoa(
+							Array.from(image.bytes, (b) => String.fromCharCode(b)).join(""),
+						),
+						mimeType: image.mimeType,
+					},
+				]);
+				return;
+			}
+		}
+		notify(text);
 		return;
 	}
 
@@ -393,7 +416,25 @@ export async function handleBfCommand(
 			);
 			return;
 		}
-		notify(renderBrowserFeedbackContext(selected.payload));
+		const text = renderBrowserFeedbackContext(selected.payload);
+		if (deps.submitFeedback && selected.payload.screenshot) {
+			const image = await deps.client
+				?.fetchScreenshot(selected.payload.eventId)
+				.catch(() => undefined);
+			if (image) {
+				deps.submitFeedback(text, [
+					{
+						type: "image",
+						data: btoa(
+							Array.from(image.bytes, (b) => String.fromCharCode(b)).join(""),
+						),
+						mimeType: image.mimeType,
+					},
+				]);
+				return;
+			}
+		}
+		notify(text);
 		return;
 	}
 

@@ -84,6 +84,13 @@ export class InMemoryFeedbackStore {
 		const events = this.list(channelId);
 		return events.at(-1);
 	}
+	findByEventId(eventId: string): StoredBrowserFeedback | undefined {
+		for (const events of this.#eventsByChannel.values()) {
+			const found = events.find((e) => e.eventId === eventId);
+			if (found) return found;
+		}
+		return undefined;
+	}
 
 	/**
 	 * Clear all journal entries for a channel and remove referenced screenshots.

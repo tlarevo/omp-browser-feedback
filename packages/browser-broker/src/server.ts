@@ -548,7 +548,50 @@ export async function createBrowserBrokerServer(
 					{ status: 401 },
 				);
 			}
-
+			const screenshotMatch = url.pathname.match(
+				/^\/api\/feedback\/([^/]+)\/screenshot$/,
+			);
+			if (request.method === "GET" && screenshotMatch) {
+				const eventId = decodeURIComponent(screenshotMatch[1] ?? "");
+				const stored = feedback.findByEventId(eventId);
+				if (!stored?.payload)
+					return jsonResponse(
+						{
+							ok: false,
+							code: "not_found",
+							message: "Feedback event not found",
+						},
+						{ status: 404 },
+					);
+				const event = stored.payload as {
+					screenshot?: { ref: string; mimeType: string };
+				};
+				if (!event.screenshot)
+					return jsonResponse(
+						{
+							ok: false,
+							code: "no_screenshot",
+							message: "Event has no screenshot",
+						},
+						{ status: 404 },
+					);
+				const image = await screenshots.read(event.screenshot.ref);
+				if (!image)
+					return jsonResponse(
+						{
+							ok: false,
+							code: "screenshot_evicted",
+							message: "Screenshot file no longer available",
+						},
+						{ status: 404 },
+					);
+				return new Response(image.bytes, {
+					headers: {
+						"Content-Type": image.mimeType,
+						"Cache-Control": "no-store",
+					},
+				});
+			}
 			if (
 				request.method === "POST" &&
 				url.pathname === "/api/sessions/register"
