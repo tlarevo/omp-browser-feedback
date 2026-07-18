@@ -271,10 +271,12 @@ describe("activateRegionCapture", () => {
 		);
 
 		expect(receivedRegion).not.toBeNull();
-		expect(receivedRegion!.x).toBe(100);
-		expect(receivedRegion!.y).toBe(100);
-		expect(receivedRegion!.width).toBe(400);
-		expect(receivedRegion!.height).toBe(300);
+		// biome-ignore lint/style/noNonNullAssertion: safe after not.toBeNull() above
+		const region = receivedRegion!;
+		expect(region.x).toBe(100);
+		expect(region.y).toBe(100);
+		expect(region.width).toBe(400);
+		expect(region.height).toBe(300);
 	});
 
 	test("reversed drag (bottom-right to top-left) normalizes correctly", () => {
@@ -295,9 +297,11 @@ describe("activateRegionCapture", () => {
 		);
 
 		expect(receivedRegion).not.toBeNull();
-		expect(receivedRegion!.x).toBe(100);
-		expect(receivedRegion!.y).toBe(100);
-		expect(receivedRegion!.width).toBe(400);
-		expect(receivedRegion!.height).toBe(300);
+		// biome-ignore lint/style/noNonNullAssertion: safe after not.toBeNull() above
+		const region2 = receivedRegion!;
+		expect(region2.x).toBe(100);
+		expect(region2.y).toBe(100);
+		expect(region2.width).toBe(400);
+		expect(region2.height).toBe(300);
 	});
 });
