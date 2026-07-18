@@ -5,7 +5,7 @@ import {
 	type BrowserPageContext,
 } from "@oh-my-pi/browser-protocol";
 import { activatePicker, type PickerHandle } from "./picker/overlay";
-import { generateSelector } from "./picker/selectors";
+import { generateSelector, generateSelectorSegments, isInShadowContext } from "./picker/selectors";
 
 export type { PickerHandle };
 
@@ -90,6 +90,8 @@ export function captureElementContext(
 			height: bounds.height,
 		},
 		computedStyles,
+		selectorSegments: generateSelectorSegments(element),
+		shadowRoot: isInShadowContext(element),
 	};
 }
 
