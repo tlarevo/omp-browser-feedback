@@ -1,12 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import {
-	BROWSER_FEEDBACK_LIMITS,
-	BROWSER_FEEDBACK_TRUNCATION_MARKER,
-	BROWSER_PROTOCOL_VERSION,
-	type BrowserFeedbackEvent,
-	codePointLength,
-} from "@oh-my-pi/browser-protocol";
-import { Event as LinkedomEvent, parseHTML } from "linkedom";
+import { BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
+import { parseHTML } from "linkedom";
 import {
 	activatePickerAndCapture,
 	buildDomSelectionFeedback,
@@ -222,80 +216,12 @@ describe("buildDomSelectionFeedback", () => {
 			element: div,
 			eventId: "evt_huge_html",
 			createdAt: "2026-07-18T00:00:00.000Z",
-			window,
-		});
-
-		if (event.type !== "dom.selection")
-			throw new Error("Expected DOM selection");
-		expect(codePointLength(event.element.outerHtml)).toBe(
-			BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength,
-		);
-		expect(event.element.outerHtml).toContain(
-			BROWSER_FEEDBACK_TRUNCATION_MARKER,
-		);
-	});
-
-	test("truncates huge element text with marker", () => {
-		const hugeTextLen = BROWSER_FEEDBACK_LIMITS.maxElementTextLength + 500;
-		const { window, div } = buildHugeDomFixture({
-			textLen: hugeTextLen,
-			htmlLen: 100,
-			attributeCount: 1,
-		});
 
 		const event = buildDomSelectionFeedback({
 			channelId: "ses_1",
 			element: div,
 			eventId: "evt_huge_text",
 			createdAt: "2026-07-18T00:00:00.000Z",
-			window,
-		});
-
-		if (event.type !== "dom.selection")
-			throw new Error("Expected DOM selection");
-		expect(event.element.text).toBeDefined();
-		expect(codePointLength(event.element.text!)).toBe(
-			BROWSER_FEEDBACK_LIMITS.maxElementTextLength,
-		);
-		expect(event.element.text).toContain(BROWSER_FEEDBACK_TRUNCATION_MARKER);
-	});
-
-	test("caps 200 attributes to maxAttributeCount (80)", () => {
-		const { window, div } = buildHugeDomFixture({
-			attributeCount: 200,
-			htmlLen: 50,
-		});
-
-		const event = buildDomSelectionFeedback({
-			channelId: "ses_1",
-			element: div,
-			eventId: "evt_200_attrs",
-			createdAt: "2026-07-18T00:00:00.000Z",
-			window,
-		});
-
-		if (event.type !== "dom.selection")
-			throw new Error("Expected DOM selection");
-		const attrCount = Object.keys(event.element.attributes).length;
-		expect(attrCount).toBe(BROWSER_FEEDBACK_LIMITS.maxAttributeCount);
-		expect(attrCount).toBeLessThan(200);
-	});
-
-	test("caps 200 computed styles to maxComputedStyleCount (80)", () => {
-		const styleProps = Array.from({ length: 200 }, (_, i) => `prop-${i}`);
-		const { window, div } = buildHugeDomFixture({
-			styleCount: 200,
-			htmlLen: 50,
-		});
-
-		const elementCtx = captureElementContext(div, {
-			window,
-			styleProperties: styleProps,
-		});
-
-		const styleCount = Object.keys(elementCtx.computedStyles).length;
-		expect(styleCount).toBe(BROWSER_FEEDBACK_LIMITS.maxComputedStyleCount);
-		expect(styleCount).toBeLessThan(200);
 	});
 });
 
@@ -466,11 +392,8 @@ describe("activatePickerAndCapture", () => {
 		const handle = activatePickerAndCapture(
 			document,
 			{ channelId: "ses_1" },
-			{
-				onPick: (event: BrowserFeedbackEvent) => {
-					result = event;
-				},
-				onExit: () => {},
+			(event) => {
+				result = event;
 			},
 		);
 
@@ -483,58 +406,9 @@ describe("activatePickerAndCapture", () => {
 		const handle = activatePickerAndCapture(
 			document,
 			{ channelId: "ses_1" },
-			{ onPick: () => {}, onExit: () => {} },
+			() => {},
 		);
 		expect(document.querySelector("[data-omp-picker-overlay]")).not.toBeNull();
 		handle.deactivate();
-	});
-});
-
-describe("activatePickerAndCapture — stay-active mode", () => {
-	test("stay-active picker fires onPick without calling onExit", () => {
-		const { document, window: linkedomWindow } = parseHTML(
-			"<!doctype html><body><button id='btn'>OK</button></body>",
-		);
-		const picks: BrowserFeedbackEvent[] = [];
-		const exits: number[] = [];
-
-		activatePickerAndCapture(
-			document,
-			{ channelId: "ses_1", stayActive: true, window: linkedomWindow },
-			{
-				onPick: (event: BrowserFeedbackEvent) => picks.push(event),
-				onExit: () => exits.push(1),
-			},
-		);
-
-		// Hover and click
-		const btn = document.querySelector("button") as Element;
-		btn.dispatchEvent(
-			new LinkedomEvent("mouseover", { bubbles: true }) as unknown as Event,
-		);
-		document.dispatchEvent(
-			new LinkedomEvent("click", { bubbles: true }) as unknown as Event,
-		);
-		expect(picks).toHaveLength(1);
-		expect(exits).toHaveLength(0);
-
-		// Escape to exit
-		document.dispatchEvent(keyDown("Escape"));
-		document.dispatchEvent(keyDown("Escape"));
-		expect(exits).toHaveLength(1);
-	});
-
-	test("deactivate removes all picker DOM elements", () => {
-		const { document } = parseHTML("<!doctype html><body></body>");
-		const handle = activatePickerAndCapture(
-			document,
-			{ channelId: "ses_1", stayActive: true },
-			{ onPick: () => {}, onExit: () => {} },
-		);
-		expect(document.querySelector("[data-omp-picker-overlay]")).not.toBeNull();
-		expect(document.querySelector("[data-omp-picker-chip]")).not.toBeNull();
-		handle.deactivate();
-		expect(document.querySelector("[data-omp-picker-overlay]")).toBeNull();
-		expect(document.querySelector("[data-omp-picker-chip]")).toBeNull();
 	});
 });

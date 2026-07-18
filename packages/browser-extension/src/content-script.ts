@@ -1,12 +1,9 @@
 import {
-	BROWSER_FEEDBACK_LIMITS,
 	BROWSER_PROTOCOL_VERSION,
 	type BrowserAccessibilityContext,
 	type BrowserElementContext,
 	type BrowserFeedbackEvent,
 	type BrowserPageContext,
-	capEntriesByPriority,
-	truncateToCodePoints,
 } from "@oh-my-pi/browser-protocol";
 import { activatePicker, type PickerHandle } from "./picker/overlay";
 import { generateSelector, generateSelectorSegments, isInShadowContext } from "./picker/selectors";
@@ -41,23 +38,6 @@ const DEFAULT_STYLE_PROPERTIES = [
 	"font-size",
 	"font-weight",
 ];
-
-/**
- * Attribute capture priority. Attributes listed here are kept first when the
- * attribute count exceeds the declared cap; remaining attributes follow in DOM
- * order.
- */
-const CAPTURE_ATTRIBUTE_PRIORITY = [
-	"id",
-	"data-testid",
-	"data-test",
-	"aria-label",
-	"name",
-	"type",
-	"href",
-	"role",
-	"class",
-] as const;
 
 export function summarizePickedElement(element: Element): PickedElementSummary {
 	const text = element.textContent?.trim();
@@ -333,8 +313,7 @@ export function captureElementContext(
 
 	const computedStyles: Record<string, string> = {};
 	const styles = win.getComputedStyle(element);
-	const styleProperties = options.styleProperties ?? DEFAULT_STYLE_PROPERTIES;
-	for (const property of styleProperties) {
+	for (const property of options.styleProperties ?? DEFAULT_STYLE_PROPERTIES) {
 		computedStyles[property] = styles.getPropertyValue(property);
 	}
 
@@ -353,15 +332,8 @@ export function captureElementContext(
 		selector: generateSelector(element),
 		tagName: element.tagName,
 		...(text ? { text } : {}),
-		outerHtml: truncateToCodePoints(
-			element.outerHTML,
-			BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength,
-		),
-		attributes: capEntriesByPriority(
-			attributes,
-			CAPTURE_ATTRIBUTE_PRIORITY,
-			BROWSER_FEEDBACK_LIMITS.maxAttributeCount,
-		),
+		outerHtml: element.outerHTML,
+		attributes,
 		bounds: {
 			x: bounds.x,
 			y: bounds.y,
@@ -399,40 +371,32 @@ export function buildDomSelectionFeedback(
 export interface PickerCaptureInput {
 	channelId: string;
 	note?: string;
-	stayActive?: boolean;
 	window?: Window;
 }
 
-export interface PickerCaptureCallbacks {
-	/** Fired once per committed pick. In stay-active mode this fires repeatedly. */
-	onPick: (event: BrowserFeedbackEvent) => void;
-	/** Fired once when the picker exits on its own (Escape / single-pick done). */
-	onExit: () => void;
-}
+export type PickerCaptureCallback = (
+	event: BrowserFeedbackEvent | null,
+) => void;
 
 export function activatePickerAndCapture(
 	document: Document,
 	input: PickerCaptureInput,
-	callbacks: PickerCaptureCallbacks,
+	callback: PickerCaptureCallback,
 ): PickerHandle {
-	return activatePicker(
-		document,
-		{
-			onSelect(element) {
-				const win = input.window ?? window;
-				callbacks.onPick(
-					buildDomSelectionFeedback({
-						channelId: input.channelId,
-						element,
-						note: input.note,
-						window: win,
-					}),
-				);
-			},
-			onExit() {
-				callbacks.onExit();
-			},
+	return activatePicker(document, {
+		onSelect(element) {
+			const win = input.window ?? window;
+			callback(
+				buildDomSelectionFeedback({
+					channelId: input.channelId,
+					element,
+					note: input.note,
+					window: win,
+				}),
+			);
 		},
-		{ stayActive: input.stayActive },
-	);
+		onCancel() {
+			callback(null);
+		},
+	});
 }
