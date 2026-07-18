@@ -21,8 +21,8 @@
 		"test": "bun test ./test/*.test.ts && bun run --workspaces --if-present test",
 		"build:omp-extension": "bun --cwd=packages/browser-omp-extension run build",
 		"build:extension": "bun --cwd=packages/browser-extension run build",
-		"check:chrome-contract": "bun scripts/check-chrome-contract-drift.ts",
-		"generate:chrome-contract": "bun scripts/export-chrome-contract.ts contracts/chrome-contract.json"
+		"build:omp-extension": "bun --cwd=packages/browser-omp-extension run build",
+		"build:store": "bun scripts/build-store-zip.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.6",
