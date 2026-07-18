@@ -489,12 +489,6 @@ export async function createBrowserBrokerServer(
 						{ status: 400 },
 					);
 				}
-				feedback.add({
-					channelId: result.value.channelId,
-					eventId: result.value.eventId,
-					createdAt: result.value.createdAt,
-					payload: result.value,
-				});
 				const session = registry.getByChannelId(result.value.channelId);
 				let wirePayload: BrowserFeedbackEvent = result.value;
 				if (session && session.negotiatedProtocolVersion < 2) {

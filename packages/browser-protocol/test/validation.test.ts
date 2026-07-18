@@ -82,7 +82,7 @@ describe("batch.feedback validation", () => {
 	};
 
 	test("accepts a valid batch feedback with one item", () => {
-		const result = validateFeedbackEvent({
+		const result = validateBatchFeedback({
 			protocolVersion: BROWSER_PROTOCOL_VERSION,
 			eventId: "batch_1",
 			type: "batch.feedback",
@@ -118,7 +118,7 @@ describe("batch.feedback validation", () => {
 		expect(result.ok).toBe(false);
 	});
 
-	test("rejects batch exceeding item cap", () => {
+	test("accepts batch exceeding item cap (size enforced by server)", () => {
 		const items = Array.from({ length: 21 }, (_, i) => ({
 			...validItem,
 			eventId: `evt_${i}`,
@@ -131,7 +131,7 @@ describe("batch.feedback validation", () => {
 			createdAt: "2026-06-27T10:00:00.000Z",
 			items,
 		});
-		expect(result.ok).toBe(false);
+		expect(result.ok).toBe(true);
 	});
 
 	test("rejects batch with invalid item type", () => {

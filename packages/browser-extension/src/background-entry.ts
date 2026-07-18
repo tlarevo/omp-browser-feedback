@@ -1,10 +1,14 @@
 import {
 	BROWSER_PROTOCOL_VERSION,
+	type BatchFeedback,
 	type BrowserFeedbackEvent,
 	type BrowserPageContext,
 	type BrowserSessionRegistration,
+	DEFAULT_BROWSER_BROKER_PORT_RANGE,
 	type DomSelectionFeedback,
 	type PageScreenshotFeedback,
+	parsePortRange,
+	portsInRange,
 } from "@oh-my-pi/browser-protocol";
 import {
 	discoverBroker,
@@ -22,7 +26,17 @@ import {
 	setActiveCapture,
 	stitchFrames,
 } from "./fullpage";
+import {
+	addItemToBasket,
+	type Basket,
+	createEmptyBasket,
+	removeItemFromBasket,
+} from "./basket";
 import { captureAndCrop } from "./screenshot";
+import {
+	type ComponentDetectionResult,
+	detectFrameworkComponent,
+} from "./component-detection";
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORTS: number[] = portsInRange(parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE));
@@ -601,20 +615,14 @@ async function handleRegionSelected(
 				};
 			}
 		}
-
+		if (screenshot && windowId !== undefined && windowId >= 0) {
 		// Show annotation canvas if we have a screenshot and a target tab
-		if (screenshot && tabId >= 0) {
 			const dataUrl = await blobToDataUrl(screenshot);
-			const width =
-				eventToSubmit.type === "dom.selection"
-					? (eventToSubmit.screenshot?.width ?? 0)
-					: eventToSubmit.screenshot.width;
-			const height =
-				eventToSubmit.type === "dom.selection"
-					? (eventToSubmit.screenshot?.height ?? 0)
-					: eventToSubmit.screenshot.height;
+		const ssEvt = eventToSubmit as PageScreenshotFeedback;
+		const width = ssEvt.screenshot.width;
+		const height = ssEvt.screenshot.height;
 
-			const annotatorResult = await showAnnotatorInTab(tabId, {
+			const annotatorResult = await showAnnotatorInTab(windowId!, {
 				imageDataUrl: dataUrl,
 				imageWidth: width,
 				imageHeight: height,

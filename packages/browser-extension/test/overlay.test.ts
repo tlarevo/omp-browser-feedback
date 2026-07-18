@@ -2,6 +2,11 @@ import { describe, expect, test } from "bun:test";
 import { Event as LinkedomEvent, parseHTML } from "linkedom";
 import { activatePicker } from "../src/picker/overlay";
 
+if (typeof globalThis.Document === "undefined") {
+	const linkedomDoc = parseHTML("").document;
+	(globalThis as unknown as { Document: typeof Document }).Document =
+		linkedomDoc.constructor as typeof Document;
+}
 function domWithButton() {
 	const { document } = parseHTML(
 		"<!doctype html><body><button id='save'>Save</button><button id='cancel'>Cancel</button></body>",

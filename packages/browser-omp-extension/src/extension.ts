@@ -81,7 +81,7 @@ async function fetchScreenshotContent(
 	client: BrowserBrokerClient,
 	event: BrowserFeedbackEvent,
 ): Promise<ImageContent | null> {
-	if (!event.screenshot) return null;
+	if (!("screenshot" in event) || !event.screenshot) return null;
 	try {
 		const image = await client.fetchScreenshot(event.eventId);
 		if (!image) return null;

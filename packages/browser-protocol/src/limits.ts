@@ -14,6 +14,8 @@ export const BROWSER_FEEDBACK_LIMITS = {
 	maxConsoleEntries: 20,
 	maxConsoleEntryBytes: 8 * 1024,
 	maxConsoleSectionBytes: 64 * 1024,
+	/** Maximum stitched canvas height in CSS pixels for fullpage capture. */
+	maxStitchedHeight: 16_384,
 } as const;
 
 export const BATCH_FEEDBACK_LIMITS = {

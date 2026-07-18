@@ -127,9 +127,9 @@ function unsupportedReason(element: Element): string | undefined {
 	// Check for cross-origin iframe context
 	let ancestor: Node | null = element;
 	while (ancestor) {
-		if (ancestor instanceof Document) {
+		if (ancestor.nodeType === 9) {
 			try {
-				void ancestor.location.href;
+				void (ancestor as Document).location.href;
 			} catch {
 				return "cross-origin iframe — not accessible";
 			}

@@ -145,7 +145,7 @@ describe("extension session listing", () => {
 });
 
 describe("extension broker version compatibility", () => {
-	test("rejects a v2 broker advertising [2,2]", async () => {
+	test("accepts a v2 broker advertising [2,2]", async () => {
 		const broker = await probeBroker("http://127.0.0.1:4317", async () =>
 			Response.json({
 				service: BROWSER_BROKER_SERVICE,
@@ -154,10 +154,11 @@ describe("extension broker version compatibility", () => {
 				broker_id: "v2-broker",
 			}),
 		);
-		expect(broker).toBeUndefined();
+		expect(broker).not.toBeUndefined();
+		expect(broker?.broker_id).toBe("v2-broker");
 	});
 
-	test("accepts a v1 broker advertising [1,1]", async () => {
+	test("rejects a v1 broker advertising [1,1]", async () => {
 		const broker = await probeBroker("http://127.0.0.1:4317", async () =>
 			Response.json({
 				service: BROWSER_BROKER_SERVICE,
@@ -166,8 +167,7 @@ describe("extension broker version compatibility", () => {
 				broker_id: "v1-broker",
 			}),
 		);
-		expect(broker).not.toBeUndefined();
-		expect(broker?.broker_id).toBe("v1-broker");
+		expect(broker).toBeUndefined();
 	});
 });
 

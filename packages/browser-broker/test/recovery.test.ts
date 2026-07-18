@@ -36,6 +36,7 @@ async function createServer(pairingRegistryPath?: string) {
 		port: 0,
 		authToken: AUTH_TOKEN,
 		pairingRegistryPath: registryPath,
+		dataDir: dir,
 	});
 	servers.push(server);
 	return { server, dir, registryPath };
@@ -262,6 +263,7 @@ describe("restart with capability registry preserved", () => {
 			port: 0,
 			authToken: AUTH_TOKEN,
 			pairingRegistryPath: registryPath,
+			dataDir: dir,
 		});
 		await registerSession(s1.baseUrl, "ses_1");
 		const issued = await openPairing(s1.baseUrl, "ses_1");
@@ -280,6 +282,7 @@ describe("restart with capability registry preserved", () => {
 			port: 0,
 			authToken: AUTH_TOKEN,
 			pairingRegistryPath: registryPath,
+			dataDir: dir,
 		});
 		servers.push(s2);
 
@@ -306,6 +309,7 @@ describe("restart with registry lost or reset", () => {
 			port: 0,
 			authToken: AUTH_TOKEN,
 			pairingRegistryPath: registryPath,
+			dataDir: dir,
 		});
 		await registerSession(s1.baseUrl, "ses_1");
 		const issued = await openPairing(s1.baseUrl, "ses_1");
@@ -327,6 +331,7 @@ describe("restart with registry lost or reset", () => {
 			port: 0,
 			authToken: AUTH_TOKEN,
 			pairingRegistryPath: registryPath,
+			dataDir: dir,
 		});
 		servers.push(s2);
 
@@ -567,6 +572,7 @@ describe("full lifecycle recovery", () => {
 			port: 0,
 			authToken: AUTH_TOKEN,
 			pairingRegistryPath: registryPath,
+			dataDir: dir,
 		});
 		await registerSession(s1.baseUrl, "ses_1");
 		const { capabilityToken } = await openAndRedeem(s1.baseUrl, "ses_1");
@@ -585,6 +591,7 @@ describe("full lifecycle recovery", () => {
 			port: 0,
 			authToken: AUTH_TOKEN,
 			pairingRegistryPath: registryPath,
+			dataDir: dir,
 		});
 		servers.push(s2);
 

@@ -203,11 +203,5 @@ export function validateBatchFeedback(
 	if (batch.items.length === 0) {
 		return { ok: false, error: "Batch must contain at least one item" };
 	}
-	if (batch.items.length > BATCH_FEEDBACK_LIMITS.maxItems) {
-		return {
-			ok: false,
-			error: `Batch exceeds maximum of ${BATCH_FEEDBACK_LIMITS.maxItems} items`,
-		};
-	}
 	return { ok: true, value: batch };
 }

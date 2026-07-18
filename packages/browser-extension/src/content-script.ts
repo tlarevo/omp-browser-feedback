@@ -6,6 +6,9 @@ import {
 	type BrowserFeedbackEvent,
 	type BrowserPageContext,
 	type ConsoleEntry,
+	type PageScreenshotFeedback,
+	truncateToCodePoints,
+	capEntriesByPriority,
 } from "@oh-my-pi/browser-protocol";
 import { activatePicker, type PickerHandle } from "./picker/overlay";
 import {
@@ -70,6 +73,18 @@ export function redactOuterHtml(html: string): string {
 		/(<input\b[^>]*?\bautocomplete\s*=\s*["']?)cc-[^"']*["']/gi,
 		"$1[REDACTED]\"",
 	);
+	return result;
+}
+function capAttributeEntries(
+	attrs: Record<string, string>,
+	max: number,
+): Record<string, string> {
+	const keys = Object.keys(attrs);
+	if (keys.length <= max) return attrs;
+	const result: Record<string, string> = {};
+	for (const key of keys.slice(0, max)) {
+		result[key] = attrs[key];
+	}
 	return result;
 }
 export type { PickerHandle };
@@ -412,16 +427,19 @@ export function captureElementContext(
 	const xpath = generateXpath(element);
 	const accessibility = captureAccessibility(element);
 
-	const redactedAttributes = redactSensitiveAttributes(
-		attributes,
-		element.tagName,
-		attributes.type,
+	const redactedAttributes = capAttributeEntries(
+		redactSensitiveAttributes(
+			attributes,
+			element.tagName,
+			attributes.type,
+		),
+		BROWSER_FEEDBACK_LIMITS.maxAttributeCount,
 	);
 	return {
 		selector: generateSelector(element),
 		tagName: element.tagName,
 		...(text ? { text } : {}),
-		outerHtml: redactOuterHtml(element.outerHTML),
+		outerHtml: truncateToCodePoints(redactOuterHtml(element.outerHTML), BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength),
 		attributes: redactedAttributes,
 		bounds: {
 			x: bounds.x,
@@ -506,6 +524,7 @@ export interface RegionCaptureInput {
 	channelId: string;
 	note?: string;
 	window?: Window;
+	consoleEntries?: ConsoleEntry[];
 }
 
 export function buildPageScreenshotFeedback(input: {
@@ -538,7 +557,7 @@ export function buildPageScreenshotFeedback(input: {
 export function activateRegionCaptureAndCapture(
 	document: Document,
 	input: RegionCaptureInput,
-	callback: PickerCaptureCallback,
+	callback: (event: PageScreenshotFeedback | null) => void,
 ): RegionHandle {
 	return activateRegionCapture(document, {
 		onRegion(region) {
@@ -549,7 +568,6 @@ export function activateRegionCaptureAndCapture(
 					region,
 					note: input.note,
 					window: win,
-					consoleEntries: input.consoleEntries,
 				}),
 			);
 		},

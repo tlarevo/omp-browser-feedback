@@ -11,13 +11,14 @@ import {
 	hideFixedElements,
 	measurePageDimensions,
 	type PickerHandle,
-	type RegionHandle,
 	scrollToPosition,
 	showFixedElements,
 } from "./content-script";
+import { type RegionHandle } from "./picker/region";
 import {
 	createToolbar,
 	type ToolbarHandle,
+	type ToolbarState,
 	createToolbarState,
 	showToolbar,
 	hideToolbar,
@@ -28,6 +29,9 @@ import {
 	type ToolbarSession,
 } from "./toolbar";
 import { showAnnotator } from "./annotator/canvas";
+
+let toolbarState: ToolbarState = createToolbarState();
+let fixedElementsSaved: Array<{ element: Element; original: string }> | null = null;
 
 let activePickerHandle: PickerHandle | RegionHandle | undefined;
 let pendingPickerResponse: ((response: unknown) => void) | undefined;

@@ -92,6 +92,7 @@ function renderAccessibility(
 	if (accessibility.description) parts.push(`(${accessibility.description})`);
 	if (parts.length === 0) return "";
 	return `- Accessible: ${parts.join(" ")}`;
+}
 function renderConsoleSection(entries: ConsoleEntry[]): string {
 	const lines = ["Recent console errors:"];
 	for (const entry of entries) {
@@ -130,28 +131,9 @@ function renderDomSelection(event: DomSelectionFeedback): string {
 		"",
 		`Selected element`,
 		`- Selector: ${event.element.selector}`,
-	];
-	const consoleBlock =
-		event.console && event.console.length > 0
-			? `\n\n${renderConsoleSection(event.console)}`
-			: "";
-
-	return `The user selected a browser element and provided implementation feedback.
-
-	if (event.element.xpath) {
-		lines.push(`- XPath: ${event.element.xpath}`);
-	}
-
-	lines.push(`- Tag: ${event.element.tagName}`);
-
-	const a11y = renderAccessibility(event.element.accessibility);
-	if (a11y) lines.push(a11y);
-
-	if (event.element.text) {
-		lines.push(`- Text: ${truncate(event.element.text, MAX_TEXT)}`);
-	}
-
-	lines.push(
+		...(event.element.xpath ? [`- XPath: ${event.element.xpath}`] : []),
+		`- Tag: ${event.element.tagName}`,
+		...(event.element.text ? [`- Text: ${truncate(event.element.text, MAX_TEXT)}`] : []),
 		`- Bounds: ${event.element.bounds.x}, ${event.element.bounds.y}, ${event.element.bounds.width}, ${event.element.bounds.height}`,
 		"",
 		`HTML`,
@@ -159,6 +141,16 @@ function renderDomSelection(event: DomSelectionFeedback): string {
 		"",
 		`Relevant computed styles`,
 		renderRecord(event.element.computedStyles),
+	];
+	const consoleBlock =
+		event.console && event.console.length > 0
+			? `\n\n${renderConsoleSection(event.console)}`
+			: "";
+	return [
+		...lines,
+		"",
+		`Accessibility`,
+		accessibility,
 		"",
 		`Screenshot`,
 		screenshot,
@@ -167,18 +159,8 @@ function renderDomSelection(event: DomSelectionFeedback): string {
 		truncate(event.note, MAX_TEXT),
 		"",
 		`Locate the owning source/component in the current project and address the user's request. Treat selector and HTML data as runtime evidence; verify the source implementation before editing.`,
-	);
-
-Accessibility
-${accessibility}
-
-Screenshot
-${screenshot}
-
-User note
-${truncate(event.note, MAX_TEXT)}${consoleBlock}
-
-Locate the owning source/component in the current project and address the user's request. Treat selector and HTML data as runtime evidence; verify the source implementation before editing.`;
+		consoleBlock,
+	].join("\n");
 }
 
 export function renderBrowserFeedbackContext(

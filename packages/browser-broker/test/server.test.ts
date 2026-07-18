@@ -25,6 +25,7 @@ async function createServer() {
 		authToken: "secret",
 		pairingRegistryPath: path.join(dir, "pairing-registry.json"),
 		screenshotRootDir: path.join(dir, "screenshots"),
+		dataDir: dir,
 	});
 	servers.push(server);
 	return server;

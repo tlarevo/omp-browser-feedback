@@ -16,6 +16,12 @@ import {
 	redactOuterHtml,
 	redactSensitiveAttributes,
 } from "../src/content-script";
+// Ensure Document is available as a global for linkedom test environments
+if (typeof globalThis.Document === "undefined") {
+	const linkedomDoc = parseHTML("").document;
+	(globalThis as unknown as { Document: typeof Document }).Document =
+		linkedomDoc.constructor as typeof Document;
+}
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
@@ -134,9 +140,6 @@ describe("buildDomSelectionFeedback", () => {
 			"<!doctype html><title>Checkout</title><button data-testid='submit' aria-label='Submit order'>Buy</button>",
 		);
 		document.title = "Checkout";
-		Object.defineProperty(window, "location", {
-			value: { href: "https://example.com/cart" },
-		});
 		Object.defineProperty(window, "innerWidth", { value: 1280 });
 		Object.defineProperty(window, "innerHeight", { value: 720 });
 		Object.defineProperty(window, "devicePixelRatio", { value: 2 });
@@ -549,6 +552,8 @@ describe("activatePickerAndCapture — stay-active mode", () => {
 		handle.deactivate();
 		expect(document.querySelector("[data-omp-picker-overlay]")).toBeNull();
 		expect(document.querySelector("[data-omp-picker-chip]")).toBeNull();
+	});
+});
 describe("redactSensitiveAttributes", () => {
 	test("redacts password input value", () => {
 		const result = redactSensitiveAttributes(
@@ -642,12 +647,6 @@ describe("captureElementContext redaction", () => {
 		const { document, window } = parseHTML(
 			'<!doctype html><input type="password" value="hunter2">',
 		);
-		Object.defineProperty(window, "location", {
-			value: { href: "https://example.com/login" },
-		});
-		Object.defineProperty(window, "innerWidth", { value: 1280 });
-		Object.defineProperty(window, "innerHeight", { value: 720 });
-		Object.defineProperty(window, "devicePixelRatio", { value: 1 });
 		window.getComputedStyle = () =>
 			({ getPropertyValue: () => "" }) as unknown as CSSStyleDeclaration;
 		const input = document.querySelector("input");
@@ -660,8 +659,4 @@ describe("captureElementContext redaction", () => {
 		expect(ctx.outerHtml).not.toContain("hunter2");
 		expect(ctx.outerHtml).toContain("[REDACTED]");
 	});
-});
-
-
-});
 });

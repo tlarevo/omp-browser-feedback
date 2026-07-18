@@ -360,7 +360,7 @@ describe("renderPopup", () => {
 	test("renders loading state with connecting message", () => {
 		const { root } = documentWithRoot();
 		renderPopup(root, { kind: "loading" });
-		expect(root.textContent).toContain("Connecting to broker");
+		expect(root.textContent).toContain("Connecting\u2026");
 		expect(root.querySelector("button")).toBeNull();
 	});
 
@@ -376,9 +376,11 @@ describe("renderPopup", () => {
 				},
 			},
 		);
-		expect(root.textContent).toContain("No OMP browser broker found");
+		expect(root.textContent).toContain("No OMP broker found");
 		expect(root.textContent).toContain("4317");
-		const retryBtn = root.querySelector("button");
+		const retryBtn = Array.from(root.querySelectorAll("button")).find(
+			(b) => b.textContent === "Retry",
+		);
 		expect(retryBtn).not.toBeNull();
 		retryBtn?.click();
 		expect(retried).toBe(true);

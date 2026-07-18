@@ -1,4 +1,4 @@
-import type { BrowserSessionRegistration } from "@oh-my-pi/browser-protocol";
+import { type BrowserSessionRegistration, DEFAULT_BROWSER_BROKER_PORT_RANGE, parsePortRange, portsInRange } from "@oh-my-pi/browser-protocol";
 import { listSessions, redeemPairingCode } from "../background";
 import {
 	type BasketState,
@@ -97,7 +97,7 @@ async function setBadgeBackgroundColor(color: string): Promise<void> {
 	});
 }
 
-const DEFAULT_PORTS: number[] = Array.from({ length: 21 }, (_, i) => 4317 + i);
+const DEFAULT_PORTS: number[] = portsInRange(parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE));
 
 function isUnauthorizedError(errorMessage: string | undefined): boolean {
 	return Boolean(
@@ -229,7 +229,7 @@ async function initPopup(): Promise<void> {
 			renderReady();
 		},
 
-		async onStartPicker(sessionId, note) {
+		async onStartPicker(sessionId: string, note?: string) {
 			const session = currentSessions.find(
 				(item) => item.sessionId === sessionId,
 			);
@@ -243,7 +243,7 @@ async function initPopup(): Promise<void> {
 			window.close();
 		},
 
-		async onStartMultiPick(sessionId) {
+		async onStartMultiPick(sessionId: string) {
 			const session = currentSessions.find(
 				(item) => item.sessionId === sessionId,
 			);

@@ -58,7 +58,7 @@ export async function ensureBrowserInstallId(): Promise<string> {
 }
 
 export type PopupState =
-	| { kind: "loading" }
+	| { kind: "loading"; message?: string }
 	| { kind: "no-broker"; attemptedPorts: number[] }
 	| { kind: "unpaired"; baseUrl: string }
 	| { kind: "pairing-error"; baseUrl: string; message: string }
@@ -68,10 +68,11 @@ export type PopupState =
 			baseUrl: string;
 			selectedSessionId?: string;
 			sessions: BrowserSessionRegistration[];
+			basket?: BasketState | null;
 			consoleCaptureEnabled?: boolean;
 	  }
 	| { kind: "error"; message: string }
-	| { kind: "capturing"; sessions: BrowserSessionRegistration[]; basket?: { total: number; items: BasketItemState[]; error?: string } | null; current?: number; total?: number };
+	| { kind: "capturing"; sessions: BrowserSessionRegistration[]; selectedSessionId?: string; basket?: { total: number; items: BasketItemState[]; error?: string } | null; current?: number; total?: number };
 
 export interface BasketItemState {
 	itemId: string;
@@ -96,15 +97,9 @@ export interface PopupActionHandlers {
 	onPairWithCode?: (code: string) => void;
 	onRefresh?: () => void;
 	onSelectSession?: (id: string) => void;
-	onStartPicker?: (sessionId: string) => void;
-	onToggleConsoleCapture?: (enabled: boolean) => void;
-	basket?: { total: number; items: unknown[] } | null;
-	onPairWithCode?: (code: string) => void;
-	onSelectSession?: (sessionId: string) => void;
 	onStartPicker?: (sessionId: string, note?: string) => void;
+	onStartMultiPick?: (sessionId: string) => void;
 	onToggleConsoleCapture?: (enabled: boolean) => void;
-	onRefresh?: () => void;
-	onForget?: () => void;
 }
 
 function clear(element: HTMLElement): void {
@@ -142,13 +137,15 @@ function announceStatus(doc: Document, text: string): void {
 	if (region) region.textContent = text;
 }
 
-function renderLoading(root: HTMLElement): void {
+function renderLoading(root: HTMLElement, message?: string): void {
 	const doc = root.ownerDocument;
 	const wrapper = el(doc, "div", { class: "loading", role: "status" });
 	wrapper.setAttribute("aria-label", "Loading");
-	wrapper.append(el(doc, "div", { class: "spinner" }), "Connecting\u2026");
+	wrapper.append(el(doc, "div", { class: "spinner" }));
+	const text = message ?? "Connecting\u2026";
+	wrapper.append(text);
 	root.append(wrapper);
-	announceStatus(doc, "Loading\u2026");
+	announceStatus(doc, text);
 }
 
 function renderToolbar(root: HTMLElement, handlers: PopupActionHandlers): void {
@@ -293,7 +290,7 @@ export function renderPopup(
 	const document = root.ownerDocument;
 
 	if (state.kind === "loading") {
-		renderLoading(root);
+		renderLoading(root, state.message);
 		return;
 	}
 
@@ -303,6 +300,9 @@ export function renderPopup(
 		const msg = el(document, "p", { class: "status" });
 		msg.textContent = `No OMP broker found on ports ${state.attemptedPorts[0]}\u2013${state.attemptedPorts[state.attemptedPorts.length - 1]}.`;
 		root.append(msg);
+		if (handlers.onRetry) {
+			root.append(createButton(document, "Retry", () => handlers.onRetry?.()));
+		}
 		announceStatus(document, "No broker found");
 		return;
 	}
@@ -449,7 +449,7 @@ function renderCapturingState(
 	}
 	root.append(list);
 
-	appendStatus(document, root, `Capturing… ${state.current}/${state.total}`);
+	announceStatus(document, `Capturing… ${state.current}/${state.total}`);
 
 	root.append(
 		createButton(document, "Cancel", () => handlers.onCancelCapture?.()),
