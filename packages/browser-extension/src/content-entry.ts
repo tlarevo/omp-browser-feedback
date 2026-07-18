@@ -1,13 +1,16 @@
-<<<<<<< HEAD
-import type { BrowserFeedbackEvent } from "@oh-my-pi/browser-protocol";
-
-=======
 import type {
+	BatchFeedback,
 	BrowserFeedbackEvent,
 	DomSelectionFeedback,
+	PageScreenshotFeedback,
 } from "@oh-my-pi/browser-protocol";
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
-import { activatePickerAndCapture, type PickerHandle } from "./content-script";
+import {
+	activatePickerAndCapture,
+	activateRegionCapture,
+	buildPageScreenshotFeedback,
+	type PickerHandle,
+	type RegionHandle,
+} from "./content-script";
 import {
 	createToolbar,
 	type ToolbarHandle,
@@ -21,12 +24,12 @@ import {
 	type ToolbarSession,
 } from "./toolbar";
 
-let activePickerHandle: PickerHandle | undefined;
-<<<<<<< HEAD
+let activePickerHandle: PickerHandle | RegionHandle | undefined;
 let pendingPickerResponse: ((response: unknown) => void) | undefined;
 let toolbarState = createToolbarState();
 let toolbarHandle: ToolbarHandle | undefined;
 let currentPickedEvent: BrowserFeedbackEvent | null = null;
+let basketMode = false;
 
 function sendToBackground(message: Record<string, unknown>): Promise<unknown> {
 	return new Promise((resolve, reject) => {
@@ -88,9 +91,6 @@ function deactivateActivePicker(): boolean {
 	}
 	return true;
 }
-=======
-let basketMode = false;
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 
 chrome.runtime.onMessage.addListener(
 	(
@@ -99,21 +99,12 @@ chrome.runtime.onMessage.addListener(
 		sendResponse: (response: unknown) => void,
 	) => {
 		if (message.type === "omp:activate-picker") {
-<<<<<<< HEAD
-			const channelId =
-				typeof message.channelId === "string" ? message.channelId : undefined;
-			if (!channelId) {
-				sendResponse({ ok: false, error: "Missing channel id" });
-				return false;
-			}
-=======
 			const { channelId, note, multiPick } = message as {
 				channelId: string;
 				note?: string;
 				multiPick?: boolean;
 				type: string;
 			};
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 
 			basketMode = !!multiPick;
 
@@ -121,9 +112,6 @@ chrome.runtime.onMessage.addListener(
 				activePickerHandle.deactivate();
 				activePickerHandle = undefined;
 			}
-
-<<<<<<< HEAD
-			const note = typeof message.note === "string" ? message.note : undefined;
 
 			// Create toolbar
 			toolbarState = showToolbar(createToolbarState());
@@ -170,33 +158,6 @@ chrome.runtime.onMessage.addListener(
 					if (toolbarState.noteEditing) {
 						toolbarState = confirmNote(toolbarState);
 						toolbarHandle?.update(toolbarState);
-=======
-			activePickerHandle = activatePickerAndCapture(
-				document,
-				{ channelId, note },
-				(event: BrowserFeedbackEvent | null) => {
-					if (basketMode) {
-						if (event && event.type === "dom.selection") {
-							chrome.runtime.sendMessage({
-								type: "omp:add-to-basket",
-								event: event as DomSelectionFeedback,
-								note: note ?? "",
-							});
-						}
-						// Keep picker active for multi-pick mode
-						chrome.runtime.sendMessage({ type: "omp:picker-ready" });
-						return;
-					}
-					activePickerHandle = undefined;
-					if (!event) {
-						sendResponse({ ok: false, error: "Picker cancelled" });
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
-						return;
-					}
-					deactivatePicker();
-					if (pendingPickerResponse) {
-						pendingPickerResponse({ ok: false, error: "Picker cancelled" });
-						pendingPickerResponse = undefined;
 					}
 				},
 			});
@@ -213,46 +174,59 @@ chrome.runtime.onMessage.addListener(
 
 			// Activate picker
 			pendingPickerResponse = sendResponse;
-		activePickerHandle = activatePickerAndCapture(
-			document,
-			{ channelId, note },
-			{
-				onPick(event: BrowserFeedbackEvent) {
-					activePickerHandle = undefined;
-					if (!event) return;
+			activePickerHandle = activatePickerAndCapture(
+				document,
+				{ channelId, note },
+				{
+					onPick(event: BrowserFeedbackEvent) {
+						activePickerHandle = undefined;
+						if (!event) return;
 
-					// Store event for toolbar Send
-					currentPickedEvent = event;
+						if (basketMode) {
+							if (event && event.type === "dom.selection") {
+								chrome.runtime.sendMessage({
+									type: "omp:add-to-basket",
+									event: event as DomSelectionFeedback,
+									note: note ?? "",
+								});
+							}
+							// Keep picker active for multi-pick mode
+							chrome.runtime.sendMessage({ type: "omp:picker-ready" });
+							return;
+						}
 
-					// Show post-pick note editing
-					const summary =
-						event.type === "dom.selection"
-							? buildPickedSummary(
-									event.element.tagName,
-									event.element.selector,
-									event.element.text ?? "",
-								)
-							: "Page screenshot";
+						// Store event for toolbar Send
+						currentPickedEvent = event;
 
-					toolbarState = enterNoteEditing(toolbarState, summary);
-					toolbarHandle?.update(toolbarState);
-					if (pendingPickerResponse) {
-						pendingPickerResponse({ ok: true });
-						pendingPickerResponse = undefined;
-					}
+						// Show post-pick note editing
+						const summary =
+							event.type === "dom.selection"
+								? buildPickedSummary(
+										event.element.tagName,
+										event.element.selector,
+										event.element.text ?? "",
+									)
+								: "Page screenshot";
+
+						toolbarState = enterNoteEditing(toolbarState, summary);
+						toolbarHandle?.update(toolbarState);
+						if (pendingPickerResponse) {
+							pendingPickerResponse({ ok: true });
+							pendingPickerResponse = undefined;
+						}
+					},
+					onExit() {
+						activePickerHandle = undefined;
+						toolbarState = hideToolbar(toolbarState);
+						toolbarHandle?.remove();
+						toolbarHandle = undefined;
+						if (pendingPickerResponse) {
+							pendingPickerResponse({ ok: false, error: "Picker cancelled" });
+							pendingPickerResponse = undefined;
+						}
+					},
 				},
-				onExit() {
-					activePickerHandle = undefined;
-					toolbarState = hideToolbar(toolbarState);
-					toolbarHandle?.remove();
-					toolbarHandle = undefined;
-					if (pendingPickerResponse) {
-						pendingPickerResponse({ ok: false, error: "Picker cancelled" });
-						pendingPickerResponse = undefined;
-					}
-				},
-			},
-		);
+			);
 			return true;
 		}
 
@@ -286,6 +260,40 @@ chrome.runtime.onMessage.addListener(
 			return false;
 		}
 
+		if (message.type === "omp:activate-region-capture") {
+			const { channelId, note } = message as {
+				channelId: string;
+				note?: string;
+				type: string;
+			};
+
+			// Cancel any existing active picker before starting a new one
+			if (activePickerHandle) {
+				activePickerHandle.deactivate();
+				activePickerHandle = undefined;
+			}
+			activePickerHandle = activateRegionCapture(document, {
+				onRegion(region) {
+					activePickerHandle = undefined;
+					const event = buildPageScreenshotFeedback({
+						channelId,
+						region,
+						note,
+					});
+					chrome.runtime.sendMessage({
+						type: "omp:region-selected",
+						event,
+						region,
+					});
+					sendResponse({ ok: true });
+				},
+				onCancel() {
+					activePickerHandle = undefined;
+					sendResponse({ ok: false, error: "Region capture cancelled" });
+				},
+			});
+			return true;
+		}
 		return false;
 	},
 );

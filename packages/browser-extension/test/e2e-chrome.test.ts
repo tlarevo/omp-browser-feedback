@@ -222,6 +222,7 @@ beforeAll(async () => {
     <button id="target" style="position:fixed;top:100px;left:100px;width:200px;height:60px;font-size:18px">
       Pick me
     </button>
+    <div id="region-target" style="position:fixed;top:300px;left:200px;width:400px;height:300px;background:#ff0000"></div>
   </body>
 </html>`,
 				{ headers: { "Content-Type": "text/html" } },
@@ -395,6 +396,70 @@ describe.skipIf(SKIP)("Chrome extension smoke test", () => {
 		);
 
 		expect(latest.feedback?.payload?.type).toBe("dom.selection");
+
+		await testPage.close();
+	}, 30_000);
+
+	test("region capture submits a page.screenshot event", async () => {
+		// Reuse the paired state from the first test
+		const capabilityToken = (await readStoredPairingState())
+			.browserCapabilityToken;
+		if (!capabilityToken) {
+			throw new Error("Missing stored browser capability token");
+		}
+		await setFeedbackStorage(broker.baseUrl, capabilityToken);
+
+		const testPage = await context.newPage();
+		await testPage.goto(testPageUrl);
+		await testPage.waitForTimeout(800);
+
+		const tabId = await findTabIdByTitle("OMP E2E Target");
+
+		// Activate region capture mode
+		const regionActivation = serviceWorker.evaluate(
+			({ nextTabId, channelId }: { nextTabId: number; channelId: string }) =>
+				chrome.tabs.sendMessage(nextTabId, {
+					type: "omp:activate-region-capture",
+					channelId,
+				}),
+			{ nextTabId: tabId, channelId: SESSION_ID },
+		);
+
+		// Wait for the marquee elements to appear
+		await testPage
+			.locator("[data-omp-region-marquee]")
+			.waitFor({ state: "attached", timeout: 8_000 });
+
+		// Drag over the red div region (200,300) → (600,600)
+		const regionTarget = testPage.locator("#region-target");
+		const box = await regionTarget.boundingBox();
+		if (!box) throw new Error("region-target not visible");
+
+		const startX = box.x + 10;
+		const startY = box.y + 10;
+		const endX = box.x + box.width - 10;
+		const endY = box.y + box.height - 10;
+
+		await testPage.mouse.move(startX, startY);
+		await testPage.mouse.down();
+		await testPage.mouse.move(endX, endY, { steps: 10 });
+		await testPage.mouse.up();
+		await regionActivation.catch(() => {});
+
+		// Poll for the page.screenshot feedback
+		const latest = await pollUntil(
+			async () => {
+				const response = await fetch(
+					`${broker.baseUrl}/api/sessions/${SESSION_ID}/feedback/latest`,
+					{ headers: { Authorization: `Bearer ${AUTH_TOKEN}` } },
+				);
+				return (await response.json()) as LatestFeedbackResponse;
+			},
+			(body) => body.feedback?.payload?.type === "page.screenshot",
+			10_000,
+		);
+
+		expect(latest.feedback?.payload?.type).toBe("page.screenshot");
 
 		await testPage.close();
 	}, 30_000);

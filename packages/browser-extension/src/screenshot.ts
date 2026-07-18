@@ -14,6 +14,7 @@ export async function captureAndCrop(
 	windowId: number,
 	bounds: { x: number; y: number; width: number; height: number },
 	devicePixelRatio: number,
+	paddingCssPx: number = PADDING_CSS_PX,
 ): Promise<CapturedScreenshot | undefined> {
 	let dataUrl: string;
 	try {
@@ -26,7 +27,7 @@ export async function captureAndCrop(
 	const fullBlob = await res.blob();
 
 	const dpr = Math.max(1, devicePixelRatio);
-	const pad = Math.round(PADDING_CSS_PX * dpr);
+	const pad = Math.round(paddingCssPx * dpr);
 
 	const fullBitmap = await createImageBitmap(fullBlob);
 	const imgW = fullBitmap.width;

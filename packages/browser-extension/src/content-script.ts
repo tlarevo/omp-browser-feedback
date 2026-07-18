@@ -6,12 +6,19 @@ import {
 	type BrowserFeedbackEvent,
 	type BrowserPageContext,
 	capEntriesByPriority,
+	type PageScreenshotFeedback,
 	truncateToCodePoints,
 } from "@oh-my-pi/browser-protocol";
 import { activatePicker, type PickerHandle } from "./picker/overlay";
+import {
+	activateRegionCapture,
+	type RegionHandle,
+	type RegionRect,
+} from "./picker/region";
 import { generateSelector, generateSelectorSegments, isInShadowContext } from "./picker/selectors";
 
-export type { PickerHandle };
+export type { PickerHandle, RegionHandle };
+export { activateRegionCapture };
 
 export interface PickedElementSummary {
 	selector: string;
@@ -435,4 +442,59 @@ export function activatePickerAndCapture(
 		},
 		{ stayActive: input.stayActive },
 	);
+}
+export interface RegionCaptureInput {
+	channelId: string;
+	note?: string;
+	window?: Window;
+}
+
+export function buildPageScreenshotFeedback(input: {
+	channelId: string;
+	region: RegionRect;
+	note?: string;
+	eventId?: string;
+	createdAt?: string;
+	window?: Window;
+}): PageScreenshotFeedback {
+	const win = input.window ?? window;
+	return {
+		protocolVersion: BROWSER_PROTOCOL_VERSION,
+		eventId: input.eventId ?? crypto.randomUUID(),
+		type: "page.screenshot",
+		channelId: input.channelId,
+		createdAt: input.createdAt ?? new Date().toISOString(),
+		page: capturePageContext(win),
+		...(input.note ? { note: input.note } : {}),
+		screenshot: {
+			kind: "crop",
+			ref: "pending",
+			mimeType: "image/png",
+			width: Math.round(input.region.width * (win.devicePixelRatio || 1)),
+			height: Math.round(input.region.height * (win.devicePixelRatio || 1)),
+		},
+	};
+}
+
+export function activateRegionCaptureAndCapture(
+	document: Document,
+	input: RegionCaptureInput,
+	callback: PickerCaptureCallback,
+): RegionHandle {
+	return activateRegionCapture(document, {
+		onRegion(region) {
+			const win = input.window ?? window;
+			callback(
+				buildPageScreenshotFeedback({
+					channelId: input.channelId,
+					region,
+					note: input.note,
+					window: win,
+				}),
+			);
+		},
+		onCancel() {
+			callback(null);
+		},
+	});
 }
