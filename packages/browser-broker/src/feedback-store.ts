@@ -85,7 +85,8 @@ export class InMemoryFeedbackStore {
 		return events.at(-1);
 	}
 	findByEventId(eventId: string): StoredBrowserFeedback | undefined {
-		for (const events of this.#eventsByChannel.values()) {
+		for (const channelId of this.#journal.listChannels()) {
+			const events = this.list(channelId);
 			const found = events.find((e) => e.eventId === eventId);
 			if (found) return found;
 		}

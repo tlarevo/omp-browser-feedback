@@ -4,6 +4,29 @@ import {
 	BROWSER_FEEDBACK_LIMITS,
 	BROWSER_PROTOCOL_VERSION,
 	BROWSER_PROTOCOL_VERSIONS,
+	BROWSER_PROTOCOL_VERSION_RANGE,
+	type BrowserFeedbackEvent,
+	type BrowserProtocolVersion,
+	ENDPOINT_FEEDBACK_SUBMIT,
+	ENDPOINT_HEALTH,
+	ENDPOINT_PAIR_OPEN,
+	ENDPOINT_PAIR_REDEEM,
+	ENDPOINT_PAIR_RESET,
+	ENDPOINT_SESSION_DELETE,
+	ENDPOINT_SESSION_FEEDBACK_CLEAR,
+	ENDPOINT_SESSION_FEEDBACK_LATEST,
+	ENDPOINT_SESSION_FEEDBACK_LIST,
+	ENDPOINT_SESSION_REGISTER,
+	ENDPOINT_SESSION_UPDATE,
+	ENDPOINT_SESSIONS_LIST,
+	ENDPOINT_WS_OMP,
+	checkFeedbackLimits,
+	downgradeToV1,
+	inferProtocolVersion,
+	matchEndpoint,
+	negotiateProtocolVersion,
+	templateToRegex,
+	utf8ByteLength,
 	validateFeedbackEvent,
 	validateSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
@@ -34,6 +57,157 @@ export interface BrowserBrokerServerOptions {
 	heartbeatTimeoutMs?: number;
 	idleAfterMs?: number;
 	graceMs?: number;
+}
+
+export interface BrowserBrokerServer {
+	baseUrl: string;
+	host: string;
+	port: number;
+	registry: BrowserSessionRegistry;
+	feedback: InMemoryFeedbackStore;
+	screenshots: BrowserScreenshotStore;
+	websockets: BrowserWebSocketRouter;
+	stop(): void;
+}
+
+function jsonResponse(body: unknown, init: ResponseInit = {}): Response {
+	return Response.json(body, init);
+}
+
+function isAllowedBrowserOrigin(origin: string): boolean {
+	return (
+		/^chrome-extension:\/\/[a-p]{32}$/.test(origin) ||
+		/^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin)
+	);
+}
+
+async function readJson(request: Request): Promise<unknown> {
+	const text = await request.text();
+	return text.length > 0 ? JSON.parse(text) : {};
+}
+
+class PayloadTooLargeError extends Error {}
+class InvalidFeedbackError extends Error {}
+
+interface ParsedFeedbackRequest {
+	event: unknown;
+	screenshotBytes?: Uint8Array;
+}
+
+/**
+ * Parse a feedback request, rejecting oversized JSON/multipart containers with
+ * `PayloadTooLargeError` before any parsing or persistence. Screenshots are
+ * returned as raw bytes so the caller can validate fields before writing them
+ * to disk.
+ */
+async function parseFeedbackRequest(
+	request: Request,
+): Promise<ParsedFeedbackRequest> {
+	const contentType = request.headers.get("content-type") ?? "";
+
+	if (!contentType.includes("multipart/form-data")) {
+		const text = await request.text();
+		if (utf8ByteLength(text) > BROWSER_FEEDBACK_LIMITS.maxEventBytes) {
+			throw new PayloadTooLargeError("Feedback JSON exceeds byte limit");
+		}
+		try {
+			return { event: text.length > 0 ? JSON.parse(text) : {} };
+		} catch {
+			throw new InvalidFeedbackError("Malformed JSON body");
+		}
+	}
+
+	const raw = await request.arrayBuffer();
+	if (raw.byteLength > BROWSER_FEEDBACK_LIMITS.maxMultipartBytes) {
+		throw new PayloadTooLargeError("Multipart feedback exceeds byte limit");
+	}
+	const form = await new Response(raw, {
+		headers: { "content-type": contentType },
+	})
+		.formData()
+		.catch(() => {
+			throw new InvalidFeedbackError("Malformed multipart body");
+		});
+	const eventPart = form.get("event");
+	if (typeof eventPart !== "string") {
+		throw new InvalidFeedbackError(
+			"Multipart feedback requires an event JSON part",
+		);
+	}
+	if (utf8ByteLength(eventPart) > BROWSER_FEEDBACK_LIMITS.maxEventBytes) {
+		throw new PayloadTooLargeError("Feedback JSON exceeds byte limit");
+	}
+	let event: unknown;
+	try {
+		event = JSON.parse(eventPart);
+	} catch {
+		throw new InvalidFeedbackError("Malformed event JSON part");
+	}
+	const screenshotPart = form.get("screenshot");
+	if (screenshotPart instanceof Blob) {
+		const bytes = new Uint8Array(await screenshotPart.arrayBuffer());
+		if (bytes.byteLength > BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes) {
+			throw new PayloadTooLargeError("Screenshot exceeds byte limit");
+		}
+		return { event, screenshotBytes: bytes };
+	}
+	return { event };
+}
+
+async function resolvePort(host: string, port: number): Promise<number> {
+	if (port !== 0) return port;
+	return await new Promise<number>((resolve, reject) => {
+		const probe = net.createServer();
+		probe.once("error", reject);
+		probe.listen(0, host, () => {
+			const address = probe.address();
+			if (!address || typeof address === "string") {
+				probe.close(() =>
+					reject(new Error("Unable to resolve available browser broker port")),
+				);
+				return;
+			}
+			const resolvedPort = address.port;
+			probe.close((error) => {
+				if (error) reject(error);
+				else resolve(resolvedPort);
+			});
+		});
+	});
+}
+
+const LOCAL_VERSION_RANGE = {
+	min: BROWSER_PROTOCOL_VERSIONS[0],
+	max: BROWSER_PROTOCOL_VERSIONS[BROWSER_PROTOCOL_VERSIONS.length - 1],
+} as const;
+
+export async function createBrowserBrokerServer(
+	options: BrowserBrokerServerOptions,
+): Promise<BrowserBrokerServer> {
+	if (options.host !== "127.0.0.1" && options.host !== "localhost") {
+		throw new Error("Browser broker only supports loopback hosts by default");
+	}
+
+	const registry = new BrowserSessionRegistry({
+		...(options.heartbeatTimeoutMs !== undefined
+			? { heartbeatTimeoutMs: options.heartbeatTimeoutMs }
+			: {}),
+		...(options.idleAfterMs !== undefined
+			? { idleAfterMs: options.idleAfterMs }
+			: {}),
+		...(options.graceMs !== undefined ? { graceMs: options.graceMs } : {}),
+	});
+	const dataDir = options.dataDir ?? defaultFeedbackDataDir();
+	const journal = new JournalStore(dataDir, {
+		maxEventsPerChannel: options.maxEventsPerChannel ?? 200,
+		maxTotalBytes: 50 * 1024 * 1024,
+		maxAgeMs: 7 * 24 * 60 * 60 * 1000,
+	});
+	journal.load();
+	const screenshotDir = options.screenshotRootDir ?? `${dataDir}/screenshots`;
+	const feedback = new InMemoryFeedbackStore({
+		journal,
+		screenshotRootDir: screenshotDir,
 	});
 	const screenshots = new BrowserScreenshotStore({
 		rootDir: screenshotDir,
@@ -52,6 +226,7 @@ export interface BrowserBrokerServerOptions {
 		port,
 		async fetch(request): Promise<Response | undefined> {
 			const url = new URL(request.url);
+			registry.prune();
 
 			const wsOmpMatch = url.pathname.match(
 				templateToRegex(ENDPOINT_WS_OMP.path),
@@ -279,9 +454,44 @@ export interface BrowserBrokerServerOptions {
 						{ status: 401 },
 					);
 				}
-				const result = validateFeedbackEvent(
-					await readFeedbackRequest(request, screenshots),
-				);
+				let parsed: ParsedFeedbackRequest;
+				try {
+					parsed = await parseFeedbackRequest(request);
+				} catch (error) {
+					if (error instanceof PayloadTooLargeError) {
+						return jsonResponse(
+							{
+								ok: false,
+								code: "payload_too_large",
+								message: error.message,
+							},
+							{ status: 413 },
+						);
+					}
+					return jsonResponse(
+						{
+							ok: false,
+							code: "invalid_feedback",
+							message:
+								error instanceof Error ? error.message : "Invalid feedback",
+						},
+						{ status: 400 },
+					);
+				}
+				const raw = parsed.event;
+				const declaredVersion = inferProtocolVersion(raw);
+				if (declaredVersion === undefined) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "invalid_feedback",
+							message: "Missing or unsupported protocolVersion",
+						},
+						{ status: 400 },
+					);
+				}
+				// Step 1: Validate the Chrome payload at its declared version.
+				const result = validateFeedbackEvent(raw, declaredVersion);
 				if (!result.ok)
 					return jsonResponse(
 						{ ok: false, code: "invalid_feedback", message: result.error },
@@ -364,9 +574,6 @@ export interface BrowserBrokerServerOptions {
 					queued: presence === "disconnected",
 					presence,
 				});
-				const session = registry.getByChannelId(result.value.channelId);
-				if (session) websockets.sendFeedback(session.sessionId, result.value);
-				return jsonResponse({ ok: true, eventId: result.value.eventId });
 			}
 
 			if (!rootAuthorized) {
@@ -427,7 +634,36 @@ export interface BrowserBrokerServerOptions {
 				request.method === ENDPOINT_SESSION_REGISTER.method &&
 				url.pathname === ENDPOINT_SESSION_REGISTER.path
 			) {
-				const result = validateSessionRegistration(await readJson(request));
+				const raw = await readJson(request);
+				const declaredVersion = inferProtocolVersion(raw);
+				if (declaredVersion === undefined) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "invalid_session",
+							message: "Missing or unsupported protocolVersion",
+						},
+						{ status: 400 },
+					);
+				}
+				const negotiated = negotiateProtocolVersion(LOCAL_VERSION_RANGE, {
+					min: declaredVersion,
+					max: declaredVersion,
+				});
+				if (negotiated === undefined) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "protocol_version_unsupported",
+							message: `No overlapping protocol version (local [${LOCAL_VERSION_RANGE.min}, ${LOCAL_VERSION_RANGE.max}], remote [${declaredVersion}, ${declaredVersion}])`,
+						},
+						{ status: 400 },
+					);
+				}
+				const result = validateSessionRegistration(
+					raw,
+					negotiated as BrowserProtocolVersion,
+				);
 				if (!result.ok)
 					return jsonResponse(
 						{ ok: false, code: "invalid_session", message: result.error },
@@ -435,7 +671,10 @@ export interface BrowserBrokerServerOptions {
 					);
 				return jsonResponse({
 					ok: true,
-					session: registry.register(result.value),
+					session: registry.register(
+						result.value,
+						negotiated as BrowserProtocolVersion,
+					),
 				});
 			}
 
@@ -509,12 +748,10 @@ export interface BrowserBrokerServerOptions {
 			);
 		},
 		websocket: {
+			sendPings: false,
 			open(socket) {
 				websockets.add(socket);
-				const session = registry.update(socket.data.sessionId, {
-					status: "active",
-					lastActiveAt: new Date().toISOString(),
-				});
+				const session = registry.markConnected(socket.data.sessionId);
 				if (!session) return;
 				const pending = feedback.pendingByChannel(session.channelId);
 				for (const stored of pending) {
@@ -558,9 +795,15 @@ export interface BrowserBrokerServerOptions {
 				if (session.negotiatedProtocolVersion < 2) return;
 				void feedback.markDelivered(session.channelId, ack.value.eventId);
 			},
-			message() {},
 		},
 	});
+
+	const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
+	const heartbeat = setInterval(() => {
+		websockets.pingAll();
+		registry.prune();
+	}, heartbeatIntervalMs);
+	heartbeat.unref?.();
 
 	return {
 		baseUrl: `http://${options.host}:${port}`,
@@ -571,6 +814,7 @@ export interface BrowserBrokerServerOptions {
 		screenshots,
 		websockets,
 		stop() {
+			clearInterval(heartbeat);
 			server.stop(true);
 		},
 	};

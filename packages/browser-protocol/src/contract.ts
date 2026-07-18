@@ -21,7 +21,6 @@ export const BROWSER_PROTOCOL_VERSION_RANGE = {
 	max: BROWSER_PROTOCOL_VERSION,
 } as const;
 
-export type BrowserProtocolVersionRange = typeof BROWSER_PROTOCOL_VERSION_RANGE;
 
 // ── Auth kinds ─────────────────────────────────────────────────────────────
 
