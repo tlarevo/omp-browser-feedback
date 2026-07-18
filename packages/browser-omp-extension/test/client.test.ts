@@ -335,3 +335,37 @@ describe("BrowserBrokerClient.subscribeFeedback", () => {
 		);
 	});
 });
+
+describe("BrowserBrokerClient.fetchScreenshot", () => {
+	test("returns bytes and mimeType on success", async () => {
+		const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+		const client = new BrowserBrokerClient({
+			baseUrl: "http://127.0.0.1:4317",
+			authToken: "root-token",
+			fetch: async (url, init) => {
+				expect(url).toContain("/api/feedback/evt_1/screenshot");
+				expect(init?.headers).toMatchObject({
+					Authorization: "Bearer root-token",
+				});
+				return new Response(pngBytes, {
+					status: 200,
+					headers: { "Content-Type": "image/png" },
+				});
+			},
+		});
+		const result = await client.fetchScreenshot("evt_1");
+		expect(result).not.toBeNull();
+		expect(result?.mimeType).toBe("image/png");
+		expect([...(result?.bytes ?? [])]).toEqual([...pngBytes]);
+	});
+
+	test("returns null when screenshot not found", async () => {
+		const client = new BrowserBrokerClient({
+			baseUrl: "http://127.0.0.1:4317",
+			authToken: "root-token",
+			fetch: async () => new Response(null, { status: 404 }),
+		});
+		const result = await client.fetchScreenshot("evt_missing");
+		expect(result).toBeNull();
+	});
+});

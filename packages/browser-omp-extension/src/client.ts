@@ -167,6 +167,18 @@ export class BrowserBrokerClient {
 		};
 		return body.feedback ?? undefined;
 	}
+	async fetchScreenshot(
+		eventId: string,
+	): Promise<{ bytes: Uint8Array; mimeType: string } | null> {
+		const response = await this.#fetch(
+			`${this.#baseUrl}/api/feedback/${encodeURIComponent(eventId)}/screenshot`,
+			{ headers: { Authorization: `Bearer ${this.#authToken}` } },
+		);
+		if (!response.ok) return null;
+		const mimeType = response.headers.get("content-type") ?? "image/png";
+		const buffer = await response.arrayBuffer();
+		return { bytes: new Uint8Array(buffer), mimeType };
+	}
 
 	async clearFeedback(sessionId: string): Promise<number> {
 		const response = await this.#fetch(

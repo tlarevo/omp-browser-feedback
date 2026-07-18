@@ -38,6 +38,13 @@ export class InMemoryFeedbackStore {
 		const events = this.#eventsByChannel.get(channelId);
 		return events?.at(-1);
 	}
+	findByEventId(eventId: string): StoredBrowserFeedback | undefined {
+		for (const events of this.#eventsByChannel.values()) {
+			const found = events.find((e) => e.eventId === eventId);
+			if (found) return found;
+		}
+		return undefined;
+	}
 
 	clear(channelId: string): number {
 		const count = this.#eventsByChannel.get(channelId)?.length ?? 0;

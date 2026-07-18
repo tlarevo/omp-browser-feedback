@@ -241,6 +241,99 @@ describe("browser broker server", () => {
 		);
 	});
 
+	test("serves screenshot bytes with correct content-type", async () => {
+		const server = await createServer();
+		const headers = rootJsonHeaders;
+
+		await fetch(`${server.baseUrl}/api/sessions/register`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify({
+				protocolVersion: BROWSER_PROTOCOL_VERSION,
+				sessionId: "ses_ss",
+				channelId: "ses_ss",
+				sessionName: "Session",
+				displayName: "Session",
+				cwd: "/repo",
+				status: "active",
+				lastActiveAt: "2026-06-27T10:00:00.000Z",
+				processId: 123,
+			}),
+		});
+
+		const pngBytes = new Uint8Array([
+			0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+		]);
+		const form = new FormData();
+		form.set(
+			"event",
+			JSON.stringify({
+				protocolVersion: BROWSER_PROTOCOL_VERSION,
+				eventId: "evt_ss",
+				type: "dom.selection",
+				channelId: "ses_ss",
+				createdAt: "2026-06-27T10:00:00.000Z",
+				page: {
+					url: "https://example.com",
+					title: "Example",
+					viewport: { width: 1200, height: 800, devicePixelRatio: 2 },
+				},
+				element: {
+					selector: "button",
+					tagName: "BUTTON",
+					outerHtml: "<button>Save</button>",
+					attributes: {},
+					bounds: { x: 1, y: 2, width: 3, height: 4 },
+					computedStyles: { display: "block" },
+				},
+				screenshot: {
+					kind: "crop",
+					ref: "pending",
+					mimeType: "image/png",
+					width: 100,
+					height: 50,
+				},
+			}),
+		);
+		form.set(
+			"screenshot",
+			new Blob([pngBytes], { type: "image/png" }),
+			"cap.png",
+		);
+
+		await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: { Authorization: "Bearer secret" },
+			body: form,
+		});
+
+		const res = await fetch(
+			`${server.baseUrl}/api/feedback/evt_ss/screenshot`,
+			{ headers },
+		);
+		expect(res.status).toBe(200);
+		expect(res.headers.get("content-type")).toBe("image/png");
+		const body = new Uint8Array(await res.arrayBuffer());
+		expect([...body]).toEqual([...pngBytes]);
+	});
+
+	test("screenshot endpoint returns 404 for unknown event", async () => {
+		const server = await createServer();
+		const res = await fetch(
+			`${server.baseUrl}/api/feedback/evt_nonexistent/screenshot`,
+			{ headers: rootJsonHeaders },
+		);
+		expect(res.status).toBe(404);
+		const body = (await res.json()) as { code: string };
+		expect(body.code).toBe("not_found");
+	});
+
+	test("screenshot endpoint requires auth", async () => {
+		const server = await createServer();
+		const res = await fetch(`${server.baseUrl}/api/feedback/evt_1/screenshot`);
+		expect(res.status).toBe(401);
+	});
+
 	test("pairing accepts requests without an Origin header", async () => {
 		const server = await createServer();
 		const issued = await openPairingWindow(server);

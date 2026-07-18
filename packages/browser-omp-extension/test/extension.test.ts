@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test";
+import { execSync } from "node:child_process";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 } from "@oh-my-pi/pi-coding-agent";
 import { BrowserBrokerClient } from "../src/client";
 import { handleBfCommand } from "../src/commands";
-import browserFeedbackExtension from "../src/extension";
+import browserFeedbackExtension, { downscaleImage } from "../src/extension";
 
 interface NotifyHarness {
 	notify: (message: string) => void;
@@ -414,6 +415,7 @@ describe("browserFeedbackExtension", () => {
 
 		expect(label).toBe("Browser Feedback");
 		expect([...handlers.keys()].sort()).toEqual([
+			"input",
 			"session_shutdown",
 			"session_start",
 		]);
@@ -422,5 +424,39 @@ describe("browserFeedbackExtension", () => {
 		expect(
 			commandConfig?.getArgumentCompletions("s").map((option) => option.value),
 		).toEqual(["status", "settings"]);
+	});
+});
+
+describe("downscaleImage", () => {
+	async function makePng(width: number, height: number): Promise<Uint8Array> {
+		const tmpFile = `/tmp/omp-test-${width}x${height}.png`;
+		execSync(
+			`python3 -c "from PIL import Image; Image.new('RGB', (${width}, ${height}), 'red').save('${tmpFile}')"`,
+		);
+		return Bun.file(tmpFile).bytes();
+	}
+
+	test("downscales images above the max dimension threshold", async () => {
+		const input = await makePng(2000, 1500);
+		const result = await downscaleImage(input, "image/png");
+		const outImg = new Bun.Image(result);
+		const meta = await outImg.metadata();
+		expect(meta.width).toBe(1568);
+		expect(meta.height).toBe(1176);
+	});
+
+	test("preserves aspect ratio during downscale", async () => {
+		const input = await makePng(1000, 3000);
+		const result = await downscaleImage(input, "image/png");
+		const outImg = new Bun.Image(result);
+		const meta = await outImg.metadata();
+		expect(meta.width).toBe(523);
+		expect(meta.height).toBe(1568);
+	});
+
+	test("returns original bytes when image is below threshold", async () => {
+		const input = await makePng(800, 600);
+		const result = await downscaleImage(input, "image/png");
+		expect(result).toBe(input);
 	});
 });
