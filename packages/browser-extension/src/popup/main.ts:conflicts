@@ -1,0 +1,3 @@
+11: onToggleConsoleCapture?: (enabled: boolean) => void;
+	onRefresh?: () => void;
+	onForget?: () => void;

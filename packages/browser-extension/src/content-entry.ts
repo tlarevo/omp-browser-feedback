@@ -8,8 +8,12 @@ import {
 	activatePickerAndCapture,
 	activateRegionCapture,
 	buildPageScreenshotFeedback,
+	hideFixedElements,
+	measurePageDimensions,
 	type PickerHandle,
 	type RegionHandle,
+	scrollToPosition,
+	showFixedElements,
 } from "./content-script";
 import {
 	createToolbar,
@@ -23,13 +27,13 @@ import {
 	buildPickedSummary,
 	type ToolbarSession,
 } from "./toolbar";
+import { showAnnotator } from "./annotator/canvas";
 
 let activePickerHandle: PickerHandle | RegionHandle | undefined;
 let pendingPickerResponse: ((response: unknown) => void) | undefined;
-let toolbarState = createToolbarState();
+let basketMode = false;
 let toolbarHandle: ToolbarHandle | undefined;
 let currentPickedEvent: BrowserFeedbackEvent | null = null;
-let basketMode = false;
 
 function sendToBackground(message: Record<string, unknown>): Promise<unknown> {
 	return new Promise((resolve, reject) => {
@@ -272,12 +276,8 @@ chrome.runtime.onMessage.addListener(
 				activePickerHandle = undefined;
 			}
 
-			const consoleEntries = capture.active ? capture.drain() : [];
-
-			activePickerHandle = activatePickerAndCapture(
-				document,
-				{ channelId, note, consoleEntries },
-				(event: BrowserFeedbackEvent | null) => {
+			activePickerHandle = activateRegionCapture(document, {
+				onRegion(region) {
 					activePickerHandle = undefined;
 					const event = buildPageScreenshotFeedback({
 						channelId,

@@ -1,0 +1,6 @@
+12: import type {
+	BatchFeedback,
+	BrowserFeedbackEvent,
+	DomSelectionFeedback,
+} from "@oh-my-pi/browser-protocol";
+13: @both

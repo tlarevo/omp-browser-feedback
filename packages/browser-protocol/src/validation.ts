@@ -1,5 +1,5 @@
 import { type Type, type } from "arktype";
-import { BATCH_FEEDBACK_LIMITS } from "./limits";
+import { BATCH_FEEDBACK_LIMITS, BROWSER_FEEDBACK_LIMITS, codePointLength } from "./limits";
 import {
 	batchFeedbackSchema,
 	browserFeedbackEventSchema,
@@ -7,6 +7,7 @@ import {
 } from "./schemas";
 import type {
 	BatchFeedback,
+	BrowserFeedbackAck,
 	BrowserFeedbackEvent,
 	BrowserProtocolVersion,
 	BrowserSessionRegistration,

@@ -368,33 +368,7 @@ export function renderPopup(
 	);
 	root.append(captureLabel);
 
-	const noteArea = document.createElement("textarea");
-	noteArea.placeholder =
-		"Optional note — e.g. 'Change the button color to blue'";
-	noteArea.rows = 2;
 
-	const activeSessionId =
-		state.selectedSessionId ?? state.sessions[0]?.sessionId;
-	root.append(
-		noteArea,
-		createButton(
-			document,
-			"Pick element",
-			activeSessionId
-				? () =>
-						handlers.onStartPicker?.(
-							activeSessionId,
-							noteArea.value.trim() || undefined,
-						)
-				: undefined,
-		),
-		createButton(
-			document,
-			"Full page",
-			activeSessionId
-				? () => handlers.onStartFullpageCapture?.(activeSessionId)
-				: undefined,
-		),
 	// ── ready ──
 	renderSessionCards(
 		document,

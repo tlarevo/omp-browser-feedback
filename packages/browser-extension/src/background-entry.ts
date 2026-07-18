@@ -966,7 +966,6 @@ chrome.runtime.onMessage.addListener(
 				return false;
 			}
 			const windowId = sender.tab?.windowId;
-			const tabId = sender.tab?.id;
 			const tabId = sender.tab?.id ?? -1;
 			handleElementSelected(
 				event as BrowserFeedbackEvent,

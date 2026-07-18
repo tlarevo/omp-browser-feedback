@@ -73,6 +73,7 @@ export function redactOuterHtml(html: string): string {
 	return result;
 }
 export type { PickerHandle };
+export { activateRegionCapture };
 
 export interface PickedElementSummary {
 	selector: string;

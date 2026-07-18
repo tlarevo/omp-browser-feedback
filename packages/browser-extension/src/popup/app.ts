@@ -1,9 +1,4 @@
-import {
-	DEFAULT_BROWSER_BROKER_PORT_RANGE,
-	parsePortRange,
-	portsInRange,
-	type BrowserSessionRegistration,
-} from "@oh-my-pi/browser-protocol";
+import type { BrowserSessionRegistration } from "@oh-my-pi/browser-protocol";
 import { listSessions, redeemPairingCode } from "../background";
 import {
 	type BasketState,
@@ -90,7 +85,6 @@ async function sendToBackground<T>(
 	});
 }
 
-const DEFAULT_PORTS: number[] = portsInRange(parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE));
 async function setBadgeText(text: string): Promise<void> {
 	return new Promise((resolve) => {
 		chrome.action.setBadgeText({ text }, resolve);
@@ -112,6 +106,7 @@ function isUnauthorizedError(errorMessage: string | undefined): boolean {
 				errorMessage.toLowerCase().includes("unauthorized")),
 	);
 }
+
 interface RawBasketItem {
 	itemId: string;
 	event: {
@@ -184,8 +179,10 @@ async function initPopup(): Promise<void> {
 			selectedSessionId: currentSelectedId,
 			sessions: currentSessions,
 			basket: currentBasket,
+			consoleCaptureEnabled: currentConsoleCapture,
 		});
 	}
+
 	const handlers: PopupActionHandlers = {
 		async onPairWithCode(code) {
 			const trimmedCode = code.trim();
@@ -229,13 +226,7 @@ async function initPopup(): Promise<void> {
 		async onSelectSession(sessionId) {
 			currentSelectedId = sessionId;
 			await writeStorage({ selectedSessionId: sessionId });
-			render({
-				kind: "ready",
-				baseUrl: currentBaseUrl,
-				selectedSessionId: currentSelectedId,
-				sessions: currentSessions,
-				consoleCaptureEnabled: currentConsoleCapture,
-			});
+			renderReady();
 		},
 
 		async onStartPicker(sessionId, note) {
@@ -251,7 +242,8 @@ async function initPopup(): Promise<void> {
 			});
 			window.close();
 		},
-		async onStartFullpageCapture(sessionId) {
+
+		async onStartMultiPick(sessionId) {
 			const session = currentSessions.find(
 				(item) => item.sessionId === sessionId,
 			);
@@ -282,9 +274,10 @@ async function initPopup(): Promise<void> {
 				currentBasket = toBasketState(basketResult.data);
 			}
 			renderReady();
+		},
+
 		async onToggleConsoleCapture(enabled) {
 			currentConsoleCapture = enabled;
-			// Query active tab for its origin, then set consent
 			const tabs = await chrome.tabs.query({
 				active: true,
 				currentWindow: true,
@@ -302,6 +295,7 @@ async function initPopup(): Promise<void> {
 					// invalid URL, ignore
 				}
 			}
+		},
 
 		async onRefresh() {
 			await refreshFromBroker();
@@ -315,9 +309,7 @@ async function initPopup(): Promise<void> {
 			render({ kind: "unpaired", baseUrl: currentBaseUrl });
 		},
 	};
-	// If background wrote a pickerHint (e.g. shortcut fired with no session),
-	// consume it and clear the key so subsequent opens are clean. The banner
-	// is re-prepended on every render() call since renderPopup clears root.
+
 	const hintKey = "pickerHint";
 	const hintRaw = await chrome.storage.local.get([hintKey]);
 	const hintMessage =
@@ -325,58 +317,18 @@ async function initPopup(): Promise<void> {
 	if (hintMessage) {
 		await chrome.storage.local.remove([hintKey]);
 		consumedHint = hintMessage;
-				type: "omp:start-fullpage-capture",
-				channelId: session.channelId,
-				baseUrl: currentBaseUrl,
-				capabilityToken: currentCapabilityToken,
-			});
-			render({
-				kind: "capturing",
-				baseUrl: currentBaseUrl,
-				selectedSessionId: currentSelectedId,
-				sessions: currentSessions,
-				current: 0,
-				total: 0,
-			});
-			pollCaptureStatus();
-		},
-
-		async onCancelCapture() {
-			await sendToBackground({ type: "omp:cancel-fullpage-capture" });
-			await refreshFromBroker();
-		},
-	};
-	async function pollCaptureStatus(): Promise<void> {
-		const status = await sendToBackground<{
-			ok: boolean;
-			data: { capturing: boolean; current: number; total: number } | null;
-		}>({ type: "omp:get-capture-status" });
-
-		if (!status?.ok || !status.data) {
-			await refreshFromBroker();
-			return;
-		}
-
-		if (!status.data.capturing) {
-			await refreshFromBroker();
-			return;
-		}
-
-		render({
-			kind: "capturing",
-			baseUrl: currentBaseUrl,
-			selectedSessionId: currentSelectedId,
-			sessions: currentSessions,
-			current: status.data.current,
-			total: status.data.total,
-		});
-
-		// Poll again in 500ms
-		const { promise, resolve } = Promise.withResolvers<void>();
-		setTimeout(resolve, 500);
-		await promise;
-		pollCaptureStatus();
 	}
+
+	chrome.storage.onChanged.addListener((changes, area) => {
+		if (area !== "local") return;
+		if (changes.basketCount) {
+			currentBasketCount = (changes.basketCount.newValue as number) ?? 0;
+			syncBadge();
+		}
+	});
+
+	render({ kind: "loading" });
+	await refreshFromBroker();
 
 	async function refreshFromBroker(): Promise<void> {
 		const brokerResult = await sendToBackground<DiscoverBrokerResponse>({
@@ -431,31 +383,19 @@ async function initPopup(): Promise<void> {
 			return;
 		}
 
-		render({
-			kind: "ready",
-			baseUrl: currentBaseUrl,
-			selectedSessionId: currentSelectedId,
-			sessions: currentSessions,
-			consoleCaptureEnabled: currentConsoleCapture,
+		const basketResult = await sendToBackground<{
+			ok: boolean;
+			data: RawBasketFromBackground;
+		}>({
+			type: "omp:get-basket",
 		});
+
 		if (basketResult.ok) {
 			currentBasket = toBasketState(basketResult.data);
 		}
 
 		renderReady();
 	}
-
-	// Live update: re-render when storage changes (e.g. basketCount updated by background)
-	chrome.storage.onChanged.addListener((changes, area) => {
-		if (area !== "local") return;
-		if (changes.basketCount) {
-			currentBasketCount = (changes.basketCount.newValue as number) ?? 0;
-			syncBadge();
-		}
-	});
-
-	render({ kind: "loading" });
-	await refreshFromBroker();
 }
 
 if (typeof document !== "undefined") {

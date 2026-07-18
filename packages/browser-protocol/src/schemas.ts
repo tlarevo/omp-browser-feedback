@@ -5,6 +5,8 @@
  * current highest version.  Prefer importing from `./v1` or `./v2` directly
  * in new code.
  */
+import { type } from "arktype";
+import { BROWSER_PROTOCOL_VERSION } from "./v2/schemas";
 
 const nonEmptyString = type("string").atLeastLength(1);
 
