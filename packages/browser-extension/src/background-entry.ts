@@ -983,7 +983,41 @@ chrome.runtime.onMessage.addListener(
 			).then(sendResponse);
 			return true;
 		}
+		if (message.type === "omp:region-selected") {
+			const event = message.event as BrowserFeedbackEvent;
+			const windowId = sender.tab?.windowId;
+			const region = message.region as { x: number; y: number; width: number; height: number };
+			handleRegionSelected(event, windowId, region).then(sendResponse);
+			return true;
+		}
 
+
+		if (message.type === "omp:get-basket") {
+			getBasket().then(sendResponse);
+			return true;
+		}
+
+		if (message.type === "omp:remove-from-basket") {
+			const itemId = typeof message.itemId === "string" ? message.itemId : "";
+			removeFromBasket(itemId).then(sendResponse);
+			return true;
+		}
+
+		if (message.type === "omp:submit-batch") {
+			const windowId = sender.tab?.windowId;
+			submitBatch(windowId).then(sendResponse);
+			return true;
+		}
+
+		if (message.type === "omp:set-console-consent") {
+			const origin = typeof message.origin === "string" ? message.origin : "";
+			const enabled = message.enabled === true;
+			handleSetConsoleConsent(origin, enabled).then(sendResponse);
+			return true;
+		}
+
+		// Unknown message type — respond to prevent port closure
+		sendResponse({ ok: false, error: `Unknown message type: ${message.type}` });
 		return false;
 	},
 );

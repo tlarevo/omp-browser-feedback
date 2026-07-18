@@ -221,11 +221,14 @@ export function activatePicker(
 		},
 		{ capture: true, signal },
 	);
-
 	document.addEventListener(
 		"mouseout",
-		() => {
+		(event) => {
 			if (walkTarget) return;
+			// Only clear when mouse actually leaves the document,
+			// not on element-to-element transitions within the page.
+			const related = event.relatedTarget as Node | null;
+			if (related && document.contains(related)) return;
 			current = null;
 			overlay.style.display = "none";
 			hideTooltip(tooltip);
