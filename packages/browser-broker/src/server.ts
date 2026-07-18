@@ -8,7 +8,7 @@ import {
 	validateSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
 import type { Server } from "bun";
-import { isAuthorizedBrowserRequest, isAuthorizedRequest } from "./auth";
+import { isAuthorizedBrowserRequest, isAuthorizedRequest, safeStringCompare } from "./auth";
 import { defaultPairingRegistryPath } from "./discovery";
 import { InMemoryFeedbackStore } from "./feedback-store";
 import { createPairingStore } from "./pairing-store";
@@ -27,6 +27,7 @@ export interface BrowserBrokerServerOptions {
 	pairingRegistryPath?: string;
 	screenshotRootDir?: string;
 	maxScreenshotBytes?: number;
+	clock?: import("./pairing-store").PairingStoreClock;
 }
 
 export interface BrowserBrokerServer {
@@ -129,6 +130,7 @@ export async function createBrowserBrokerServer(
 	const websockets = new BrowserWebSocketRouter();
 	const pairingStore = createPairingStore({
 		registryPath: options.pairingRegistryPath ?? defaultPairingRegistryPath(),
+		...(options.clock ? { clock: options.clock } : {}),
 	});
 	const port = await resolvePort(options.host, options.port);
 
@@ -153,7 +155,7 @@ export async function createBrowserBrokerServer(
 					);
 				}
 				const token = url.searchParams.get("token");
-				if (token !== options.authToken) {
+				if (!token || !safeStringCompare(token, options.authToken)) {
 					return jsonResponse(
 						{
 							ok: false,

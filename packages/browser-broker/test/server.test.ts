@@ -339,3 +339,190 @@ describe("browser broker server", () => {
 		expect(response.status).toBe(401);
 	});
 });
+describe("security hardening", () => {
+	test("rejects non-loopback host", async () => {
+		await expect(
+			createBrowserBrokerServer({
+				host: "0.0.0.0",
+				port: 0,
+				authToken: "secret",
+				pairingRegistryPath: "/tmp/omp-test-reject.json",
+			}),
+		).rejects.toThrow("loopback");
+	});
+
+	test("rejects empty bearer token", async () => {
+		const server = await createServer();
+		const response = await fetch(`${server.baseUrl}/api/sessions`, {
+			headers: { Authorization: "Bearer " },
+		});
+		expect(response.status).toBe(401);
+	});
+
+	test("rejects malformed bearer header", async () => {
+		const server = await createServer();
+		const response = await fetch(`${server.baseUrl}/api/sessions`, {
+			headers: { Authorization: "Token secret" },
+		});
+		expect(response.status).toBe(401);
+	});
+
+	test("rejects wrong token with constant-time comparison", async () => {
+		const server = await createServer();
+		const response = await fetch(`${server.baseUrl}/api/sessions`, {
+			headers: { Authorization: "Bearer wrong_token_value" },
+		});
+		expect(response.status).toBe(401);
+	});
+
+	test("concurrent pairing redemption yields exactly one winner", async () => {
+		const server = await createServer();
+		const issued = await openPairingWindow(server);
+
+		const attempts = Array.from({ length: 10 }, (_, i) =>
+			fetch(`${server.baseUrl}/api/pair`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					browserInstallId: `browser_${i}`,
+					code: issued.code,
+				}),
+			}),
+		);
+
+		const responses = await Promise.all(attempts);
+		const successes = responses.filter((r) => r.status === 200);
+		const failures = responses.filter((r) => r.status !== 200);
+
+		expect(successes.length).toBe(1);
+		expect(failures.length).toBe(9);
+
+		for (const fail of failures) {
+			const body = (await fail.json()) as { ok: boolean; code: string };
+			expect(body.ok).toBe(false);
+			expect(body.code).not.toBe("unauthorized");
+		}
+	});
+
+	test("expired pairing code returns no token material", async () => {
+		const dir = await fs.mkdtemp(path.join("/tmp", "omp-security-"));
+		dirs.push(dir);
+		let currentTime = new Date("2026-01-01T00:00:00Z");
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+			pairingRegistryPath: path.join(dir, "pairing-registry.json"),
+			clock: { now: () => currentTime },
+		});
+		servers.push(server);
+		await registerSession(server);
+		const issued = await (
+			await fetch(`${server.baseUrl}/api/pair/open`, {
+				method: "POST",
+				headers: rootJsonHeaders,
+				body: JSON.stringify({ sessionId: "ses_1" }),
+			})
+		).json();
+
+		currentTime = new Date("2026-01-01T00:05:00Z");
+
+		const response = await fetch(`${server.baseUrl}/api/pair`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({
+				browserInstallId: "browser_expired",
+				code: (issued as { code: string }).code,
+			}),
+		});
+		const body = (await response.json()) as Record<string, unknown>;
+		expect(response.status).toBe(400);
+		expect(body).not.toHaveProperty("capabilityToken");
+		expect(body).toHaveProperty("code", "invalid_pairing_code");
+	});
+
+	test("brute-force pairing code returns no token material", async () => {
+		const server = await createServer();
+		const issued = await openPairingWindow(server);
+
+		for (let i = 0; i < 6; i++) {
+			const response = await fetch(`${server.baseUrl}/api/pair`, {
+				method: "POST",
+				headers: { "Content-Type": "application/json" },
+				body: JSON.stringify({
+					browserInstallId: "browser_brute",
+					code: "WRONGCODE",
+				}),
+			});
+			const body = (await response.json()) as Record<string, unknown>;
+			expect(body).not.toHaveProperty("capabilityToken");
+		}
+	});
+
+	test("GET on unknown route returns 404 structured response", async () => {
+		const server = await createServer();
+		const response = await fetch(`${server.baseUrl}/api/nonexistent`, {
+			headers: rootJsonHeaders,
+		});
+		const body = (await response.json()) as { ok: boolean; code: string };
+		expect(response.status).toBe(404);
+		expect(body.ok).toBe(false);
+		expect(body.code).toBe("not_found");
+	});
+
+	test("POST feedback without auth is rejected", async () => {
+		const server = await createServer();
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(response.status).toBe(401);
+	});
+
+	test("session register requires root auth", async () => {
+		const server = await createServer();
+		const response = await fetch(`${server.baseUrl}/api/sessions/register`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(response.status).toBe(401);
+	});
+
+	test("session PATCH requires root auth", async () => {
+		const server = await createServer();
+		const response = await fetch(`${server.baseUrl}/api/sessions/ses_1`, {
+			method: "PATCH",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({}),
+		});
+		expect(response.status).toBe(401);
+	});
+
+	test("session DELETE requires root auth", async () => {
+		const server = await createServer();
+		const response = await fetch(`${server.baseUrl}/api/sessions/ses_1`, {
+			method: "DELETE",
+		});
+		expect(response.status).toBe(401);
+	});
+
+	test("pair/open requires root auth", async () => {
+		const server = await createServer();
+		const response = await fetch(`${server.baseUrl}/api/pair/open`, {
+			method: "POST",
+			headers: { "Content-Type": "application/json" },
+			body: JSON.stringify({ sessionId: "ses_1" }),
+		});
+		expect(response.status).toBe(401);
+	});
+
+	test("pair/reset requires root auth", async () => {
+		const server = await createServer();
+		const response = await fetch(`${server.baseUrl}/api/pair/reset`, {
+			method: "POST",
+		});
+		expect(response.status).toBe(401);
+	});
+});
