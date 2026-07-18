@@ -35,6 +35,10 @@ export interface BrowserBrokerServerOptions {
 	maxScreenshotBytes?: number;
 	/** Path for durable pending-event persistence. */
 	deliveryPath?: string;
+	heartbeatIntervalMs?: number;
+	heartbeatTimeoutMs?: number;
+	idleAfterMs?: number;
+	graceMs?: number;
 }
 
 export interface BrowserBrokerServer {
@@ -130,7 +134,15 @@ export async function createBrowserBrokerServer(
 		throw new Error("Browser broker only supports loopback hosts by default");
 	}
 
-	const registry = new BrowserSessionRegistry();
+	const registry = new BrowserSessionRegistry({
+		...(options.heartbeatTimeoutMs !== undefined
+			? { heartbeatTimeoutMs: options.heartbeatTimeoutMs }
+			: {}),
+		...(options.idleAfterMs !== undefined
+			? { idleAfterMs: options.idleAfterMs }
+			: {}),
+		...(options.graceMs !== undefined ? { graceMs: options.graceMs } : {}),
+	});
 	const feedback = new InMemoryFeedbackStore({
 		maxEventsPerChannel: options.maxEventsPerChannel ?? 50,
 		deliveryPath: options.deliveryPath ?? defaultDeliveryPath(),
@@ -152,6 +164,7 @@ export async function createBrowserBrokerServer(
 		port,
 		async fetch(request): Promise<Response | undefined> {
 			const url = new URL(request.url);
+			registry.prune();
 
 			const wsOmpMatch = url.pathname.match(/^\/ws\/omp\/([^/]+)$/);
 			if (wsOmpMatch) {
@@ -402,10 +415,13 @@ export async function createBrowserBrokerServer(
 					createdAt: result.value.createdAt,
 					payload: result.value,
 				});
-				if (session) {
-					// Send the wire-appropriate payload to the OMP subscriber.
-					// v1 OMP receives the validated v1-downgraded form.
-					// v2 OMP receives the original v2 payload.
+				if (!session)
+					return jsonResponse({ ok: true, eventId: result.value.eventId });
+				const presence = registry.presenceOf(session.sessionId);
+				// Send the wire-appropriate payload to the OMP subscriber.
+				// v1 OMP receives the validated v1-downgraded form.
+				// v2 OMP receives the original v2 payload.
+				if (presence !== "disconnected") {
 					websockets.sendFeedback(session.sessionId, wirePayload);
 					// v1 legacy: mark-on-send (not crash-safe).
 					// v2: remains pending until ACK from OMP.
@@ -413,7 +429,12 @@ export async function createBrowserBrokerServer(
 						feedback.markDelivered(session.channelId, result.value.eventId);
 					}
 				}
-				return jsonResponse({ ok: true, eventId: result.value.eventId });
+				return jsonResponse({
+					ok: true,
+					eventId: result.value.eventId,
+					queued: presence === "disconnected",
+					presence,
+				});
 			}
 
 			if (!rootAuthorized) {
@@ -546,12 +567,10 @@ export async function createBrowserBrokerServer(
 			);
 		},
 		websocket: {
+			sendPings: false,
 			open(socket) {
 				websockets.add(socket);
-				const session = registry.update(socket.data.sessionId, {
-					status: "active",
-					lastActiveAt: new Date().toISOString(),
-				});
+				const session = registry.markConnected(socket.data.sessionId);
 				if (!session) return;
 				const pending = feedback.pendingByChannel(session.channelId);
 				for (const stored of pending) {
@@ -574,7 +593,11 @@ export async function createBrowserBrokerServer(
 			},
 			close(socket) {
 				websockets.remove(socket);
-				registry.markDisconnected(socket.data.sessionId);
+				if (!websockets.hasSession(socket.data.sessionId))
+					registry.markDisconnected(socket.data.sessionId);
+			},
+			pong(socket) {
+				registry.recordPong(socket.data.sessionId);
 			},
 			message(socket, data) {
 				let msg: unknown;
@@ -594,6 +617,13 @@ export async function createBrowserBrokerServer(
 		},
 	});
 
+	const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
+	const heartbeat = setInterval(() => {
+		websockets.pingAll();
+		registry.prune();
+	}, heartbeatIntervalMs);
+	heartbeat.unref?.();
+
 	return {
 		baseUrl: `http://${options.host}:${port}`,
 		host: options.host,
@@ -603,6 +633,7 @@ export async function createBrowserBrokerServer(
 		screenshots,
 		websockets,
 		stop() {
+			clearInterval(heartbeat);
 			server.stop(true);
 		},
 	};

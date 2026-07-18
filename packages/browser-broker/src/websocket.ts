@@ -25,6 +25,16 @@ export class BrowserWebSocketRouter {
 		if (sockets.size === 0) this.#ompSockets.delete(socket.data.sessionId);
 	}
 
+	hasSession(sessionId: string): boolean {
+		return (this.#ompSockets.get(sessionId)?.size ?? 0) > 0;
+	}
+
+	pingAll(): void {
+		for (const sockets of this.#ompSockets.values()) {
+			for (const socket of sockets) socket.ping();
+		}
+	}
+
 	sendFeedback(sessionId: string, event: BrowserFeedbackEvent): void {
 		const sockets = this.#ompSockets.get(sessionId);
 		if (!sockets) return;
