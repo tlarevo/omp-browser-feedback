@@ -93,6 +93,7 @@ async function initPopup(): Promise<void> {
 	let currentCapabilityToken = "";
 	let currentSessions: BrowserSessionRegistration[] = [];
 	let currentSelectedId: string | undefined;
+	let currentConsoleCapture = false;
 
 	const handlers: PopupActionHandlers = {
 		async onPairWithCode(code) {
@@ -142,6 +143,7 @@ async function initPopup(): Promise<void> {
 				baseUrl: currentBaseUrl,
 				selectedSessionId: currentSelectedId,
 				sessions: currentSessions,
+				consoleCaptureEnabled: currentConsoleCapture,
 			});
 		},
 
@@ -157,6 +159,27 @@ async function initPopup(): Promise<void> {
 				...(note ? { note } : {}),
 			});
 			window.close();
+		},
+		async onToggleConsoleCapture(enabled) {
+			currentConsoleCapture = enabled;
+			// Query active tab for its origin, then set consent
+			const tabs = await chrome.tabs.query({
+				active: true,
+				currentWindow: true,
+			});
+			const tab = tabs[0];
+			if (tab?.url) {
+				try {
+					const origin = new URL(tab.url).origin;
+					await sendToBackground({
+						type: "omp:set-console-consent",
+						origin,
+						enabled,
+					});
+				} catch {
+					// invalid URL, ignore
+				}
+			}
 		},
 	};
 
@@ -175,6 +198,30 @@ async function initPopup(): Promise<void> {
 		const stored = await readStorage();
 		currentCapabilityToken = stored.browserCapabilityToken ?? "";
 		currentSelectedId = stored.selectedSessionId;
+		// Load console capture consent for active tab's origin
+		currentConsoleCapture = false;
+		try {
+			const tabs = await chrome.tabs.query({
+				active: true,
+				currentWindow: true,
+			});
+			const tab = tabs[0];
+			if (tab?.url) {
+				const origin = new URL(tab.url).origin;
+				const consentResult = await sendToBackground<{
+					ok: boolean;
+					data?: boolean;
+				}>({
+					type: "omp:get-console-consent",
+					origin,
+				});
+				if (consentResult.ok && consentResult.data === true) {
+					currentConsoleCapture = true;
+				}
+			}
+		} catch {
+			// ignore — consent defaults to false
+		}
 
 		if (!currentCapabilityToken) {
 			render({ kind: "unpaired", baseUrl: currentBaseUrl });
@@ -216,6 +263,7 @@ async function initPopup(): Promise<void> {
 			baseUrl: currentBaseUrl,
 			selectedSessionId: currentSelectedId,
 			sessions: currentSessions,
+			consoleCaptureEnabled: currentConsoleCapture,
 		});
 	}
 

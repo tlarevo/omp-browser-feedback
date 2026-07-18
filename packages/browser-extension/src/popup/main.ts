@@ -48,6 +48,7 @@ export type PopupState =
 			baseUrl: string;
 			selectedSessionId?: string;
 			sessions: BrowserSessionRegistration[];
+			consoleCaptureEnabled?: boolean;
 	  }
 	| { kind: "error"; message: string };
 
@@ -55,6 +56,7 @@ export interface PopupActionHandlers {
 	onPairWithCode?: (code: string) => void;
 	onSelectSession?: (sessionId: string) => void;
 	onStartPicker?: (sessionId: string, note?: string) => void;
+	onToggleConsoleCapture?: (enabled: boolean) => void;
 }
 
 function clear(element: HTMLElement): void {
@@ -166,6 +168,20 @@ export function renderPopup(
 		list.append(item);
 	}
 	root.append(list);
+	const captureLabel = document.createElement("label");
+	captureLabel.style.cssText =
+		"display:flex;align-items:center;gap:6px;margin:8px 0;font-size:13px;";
+	const captureCheckbox = document.createElement("input");
+	captureCheckbox.type = "checkbox";
+	captureCheckbox.checked = state.consoleCaptureEnabled ?? false;
+	captureCheckbox.addEventListener("change", () =>
+		handlers.onToggleConsoleCapture?.(captureCheckbox.checked),
+	);
+	captureLabel.append(
+		captureCheckbox,
+		document.createTextNode("Capture console errors"),
+	);
+	root.append(captureLabel);
 
 	const noteArea = document.createElement("textarea");
 	noteArea.placeholder =

@@ -75,6 +75,15 @@ const screenshotSchema = type({
 	width: "number",
 	height: "number",
 });
+const consoleEntrySchema = type({
+	"+": "reject",
+	timestamp: nonEmptyString,
+	level: "'error' | 'warn'",
+	message: "string",
+	"stack?": "string",
+});
+
+const consoleSectionSchema = consoleEntrySchema.array();
 
 export const domSelectionFeedbackSchema = type({
 	"+": "reject",
@@ -87,6 +96,7 @@ export const domSelectionFeedbackSchema = type({
 	element: elementSchema,
 	"note?": "string",
 	"screenshot?": screenshotSchema,
+	"console?": consoleSectionSchema,
 });
 
 export const pageScreenshotFeedbackSchema = type({
@@ -99,6 +109,7 @@ export const pageScreenshotFeedbackSchema = type({
 	page: pageSchema,
 	"note?": "string",
 	screenshot: screenshotSchema,
+	"console?": consoleSectionSchema,
 });
 
 export const browserFeedbackEventSchema = domSelectionFeedbackSchema.or(

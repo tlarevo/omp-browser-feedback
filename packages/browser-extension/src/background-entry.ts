@@ -148,6 +148,33 @@ async function handleElementSelected(
 	}
 }
 
+function consentKey(origin: string): string {
+	return `consoleCapture:${origin}`;
+}
+
+async function handleGetConsoleConsent(
+	origin: string,
+): Promise<MessageResponse<boolean>> {
+	try {
+		const result = await chrome.storage.local.get(consentKey(origin));
+		return { ok: true, data: result[consentKey(origin)] === true };
+	} catch (error) {
+		return { ok: false, error: String(error) };
+	}
+}
+
+async function handleSetConsoleConsent(
+	origin: string,
+	enabled: boolean,
+): Promise<MessageResponse<void>> {
+	try {
+		await chrome.storage.local.set({ [consentKey(origin)]: enabled });
+		return { ok: true, data: undefined };
+	} catch (error) {
+		return { ok: false, error: String(error) };
+	}
+}
+
 chrome.runtime.onMessage.addListener(
 	(
 		message: { type: string; [key: string]: unknown },
@@ -221,6 +248,30 @@ chrome.runtime.onMessage.addListener(
 			handleElementSelected(event as BrowserFeedbackEvent, windowId).then(
 				sendResponse,
 			);
+			return true;
+		}
+
+		if (message.type === "omp:get-console-consent") {
+			const origin =
+				typeof message.origin === "string" ? message.origin : undefined;
+			if (!origin) {
+				sendResponse({ ok: false, error: "Missing origin" });
+				return false;
+			}
+			handleGetConsoleConsent(origin).then(sendResponse);
+			return true;
+		}
+
+		if (message.type === "omp:set-console-consent") {
+			const origin =
+				typeof message.origin === "string" ? message.origin : undefined;
+			const enabled =
+				typeof message.enabled === "boolean" ? message.enabled : undefined;
+			if (!origin || enabled === undefined) {
+				sendResponse({ ok: false, error: "Missing origin or enabled" });
+				return false;
+			}
+			handleSetConsoleConsent(origin, enabled).then(sendResponse);
 			return true;
 		}
 
