@@ -292,9 +292,15 @@ export class JournalStore {
 		const ackedEventIds = new Set(
 			lines.filter((l) => l.type === "ack").map((l) => l.eventId),
 		);
-		const compacted = lines.filter(
+		let compacted = lines.filter(
 			(l) => l.type === "event" && !ackedEventIds.has(l.eventId),
 		);
+		// Trim oldest unacked events if over the limit
+		if (compacted.length > this.#bounds.maxEventsPerChannel) {
+			compacted = compacted.slice(
+				compacted.length - this.#bounds.maxEventsPerChannel,
+			);
+		}
 		this.#channelLines.set(channelId, compacted);
 		const content =
 			compacted.length > 0

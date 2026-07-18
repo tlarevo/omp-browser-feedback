@@ -51,6 +51,7 @@ async function createTestBroker(dir: string) {
 		maxEventsPerChannel: 10,
 		pairingRegistryPath,
 		screenshotRootDir: path.join(dir, "screenshots"),
+		dataDir: dir,
 	});
 	return { server, pairingRegistryPath };
 }
@@ -883,6 +884,7 @@ describe("in-process integration: pairing countdown", () => {
 			port: 0,
 			authToken: "test-root-token",
 			pairingRegistryPath,
+			dataDir: dir,
 		});
 
 		try {
@@ -967,6 +969,7 @@ describe("in-process integration: pairing countdown", () => {
 			port: 0,
 			authToken: "test-root-token",
 			pairingRegistryPath: path.join(dir, "pairing-registry.json"),
+			dataDir: dir,
 		});
 
 		try {
@@ -1247,6 +1250,7 @@ describe("in-process integration: broker lifecycle", () => {
 			port: 0,
 			authToken: "test-root-token",
 			pairingRegistryPath,
+			dataDir: dir,
 		});
 
 		try {
@@ -1379,6 +1383,7 @@ describe("in-process integration: broker lifecycle", () => {
 			authToken: "test-root-token",
 			maxEventsPerChannel: 3,
 			pairingRegistryPath: path.join(dir, "pairing-registry.json"),
+			dataDir: dir,
 		});
 		const sessionId = "ses_max_events";
 
