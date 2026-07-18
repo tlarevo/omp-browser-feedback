@@ -1,5 +1,7 @@
 import * as net from "node:net";
 import {
+	BATCH_FEEDBACK_LIMITS,
+	type BatchFeedback,
 	BROWSER_BROKER_SERVICE,
 	BROWSER_FEEDBACK_LIMITS,
 	BROWSER_PROTOCOL_VERSION,
@@ -69,9 +71,38 @@ async function readFeedbackRequest(
 	if (typeof eventPart !== "string") {
 		throw new Error("Multipart feedback requires an event JSON part");
 	}
-	const event = JSON.parse(eventPart) as BrowserFeedbackEvent;
+	const parsed = JSON.parse(eventPart) as Record<string, unknown>;
+
+	if (parsed.type === "batch.feedback") {
+		const batch = parsed as unknown as BatchFeedback;
+		const savedItems = [...batch.items];
+		let hasChanges = false;
+		for (let i = 0; i < savedItems.length; i++) {
+			const screenshotPart = form.get(`screenshot_${i}`);
+			const existingScreenshot = savedItems[i].screenshot;
+			if (screenshotPart instanceof Blob && existingScreenshot) {
+				const saved = await screenshots.save({
+					eventId: `${batch.eventId}_item_${i}`,
+					mimeType: existingScreenshot.mimeType,
+					bytes: new Uint8Array(await screenshotPart.arrayBuffer()),
+				});
+				savedItems[i] = {
+					...savedItems[i],
+					screenshot: { ...existingScreenshot, ref: saved.ref },
+				};
+				hasChanges = true;
+			}
+		}
+		return hasChanges ? { ...batch, items: savedItems } : batch;
+	}
+
+	const event = parsed as unknown as BrowserFeedbackEvent;
 	const screenshotPart = form.get("screenshot");
-	if (screenshotPart instanceof Blob && event.screenshot) {
+	if (
+		event.type === "dom.selection" &&
+		screenshotPart instanceof Blob &&
+		event.screenshot
+	) {
 		const saved = await screenshots.save({
 			eventId: event.eventId,
 			mimeType: event.screenshot.mimeType,
@@ -339,14 +370,26 @@ export async function createBrowserBrokerServer(
 						{ status: 401 },
 					);
 				}
-				const result = validateFeedbackEvent(
-					await readFeedbackRequest(request, screenshots),
-				);
+				const raw = await readFeedbackRequest(request, screenshots);
+				const result = validateFeedbackEvent(raw);
 				if (!result.ok)
 					return jsonResponse(
 						{ ok: false, code: "invalid_feedback", message: result.error },
 						{ status: 400 },
 					);
+				if (
+					result.value.type === "batch.feedback" &&
+					result.value.items.length > BATCH_FEEDBACK_LIMITS.maxItems
+				) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "batch_too_large",
+							message: `Batch exceeds maximum of ${BATCH_FEEDBACK_LIMITS.maxItems} items`,
+						},
+						{ status: 400 },
+					);
+				}
 				feedback.add({
 					channelId: result.value.channelId,
 					eventId: result.value.eventId,

@@ -339,3 +339,120 @@ describe("browser broker server", () => {
 		expect(response.status).toBe(401);
 	});
 });
+describe("batch.feedback", () => {
+	const validItem = {
+		protocolVersion: 1,
+		eventId: "evt_item_1",
+		type: "dom.selection",
+		channelId: "ses_1",
+		createdAt: "2026-06-27T10:00:00.000Z",
+		page: {
+			url: "https://example.com",
+			title: "Example",
+			viewport: { width: 1200, height: 800, devicePixelRatio: 2 },
+		},
+		element: {
+			selector: "button",
+			tagName: "BUTTON",
+			outerHtml: "<button>Save</button>",
+			attributes: {},
+			bounds: { x: 1, y: 2, width: 3, height: 4 },
+			computedStyles: { display: "block" },
+		},
+	};
+
+	test("accepts batch feedback as JSON", async () => {
+		const server = await createServer();
+		const headers = rootJsonHeaders;
+
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify({
+				protocolVersion: 1,
+				eventId: "batch_1",
+				type: "batch.feedback",
+				channelId: "ses_1",
+				createdAt: "2026-06-27T10:00:00.000Z",
+				items: [
+					{ ...validItem, eventId: "evt_1" },
+					{ ...validItem, eventId: "evt_2" },
+				],
+				batchNote: "Fix these",
+			}),
+		});
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { ok: boolean; eventId: string };
+		expect(body.ok).toBe(true);
+		expect(body.eventId).toBe("batch_1");
+	});
+
+	test("accepts batch feedback with multipart screenshots", async () => {
+		const server = await createServer();
+		const headers = rootJsonHeaders;
+		const form = new FormData();
+		form.set(
+			"event",
+			JSON.stringify({
+				protocolVersion: 1,
+				eventId: "batch_2",
+				type: "batch.feedback",
+				channelId: "ses_1",
+				createdAt: "2026-06-27T10:00:00.000Z",
+				items: [
+					{
+						...validItem,
+						eventId: "evt_1",
+						screenshot: {
+							kind: "crop",
+							ref: "pending",
+							mimeType: "image/png",
+							width: 100,
+							height: 100,
+						},
+					},
+					{ ...validItem, eventId: "evt_2" },
+				],
+			}),
+		);
+		form.set(
+			"screenshot_0",
+			new Blob([new Uint8Array([1, 2, 3])], { type: "image/png" }),
+			"item0.png",
+		);
+
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: { Authorization: "Bearer secret" },
+			body: form,
+		});
+		expect(response.status).toBe(200);
+		const body = (await response.json()) as { ok: boolean; eventId: string };
+		expect(body.ok).toBe(true);
+	});
+
+	test("rejects batch exceeding item cap", async () => {
+		const server = await createServer();
+		const headers = rootJsonHeaders;
+		const items = Array.from({ length: 21 }, (_, i) => ({
+			...validItem,
+			eventId: `evt_${i}`,
+		}));
+
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify({
+				protocolVersion: 1,
+				eventId: "batch_large",
+				type: "batch.feedback",
+				channelId: "ses_1",
+				createdAt: "2026-06-27T10:00:00.000Z",
+				items,
+			}),
+		});
+		expect(response.status).toBe(400);
+		const body = (await response.json()) as { ok: boolean; code: string };
+		expect(body.code).toBe("batch_too_large");
+	});
+});

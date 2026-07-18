@@ -101,6 +101,17 @@ export const pageScreenshotFeedbackSchema = type({
 	screenshot: screenshotSchema,
 });
 
-export const browserFeedbackEventSchema = domSelectionFeedbackSchema.or(
-	pageScreenshotFeedbackSchema,
-);
+export const batchFeedbackSchema = type({
+	"+": "reject",
+	protocolVersion: type.enumerated(BROWSER_PROTOCOL_VERSION),
+	eventId: nonEmptyString,
+	type: "'batch.feedback'",
+	channelId: nonEmptyString,
+	createdAt: nonEmptyString,
+	items: domSelectionFeedbackSchema.array(),
+	"batchNote?": "string",
+});
+
+export const browserFeedbackEventSchema = domSelectionFeedbackSchema
+	.or(pageScreenshotFeedbackSchema)
+	.or(batchFeedbackSchema);

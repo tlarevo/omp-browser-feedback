@@ -1,7 +1,11 @@
-import type { BrowserFeedbackEvent } from "@oh-my-pi/browser-protocol";
+import type {
+	BrowserFeedbackEvent,
+	DomSelectionFeedback,
+} from "@oh-my-pi/browser-protocol";
 import { activatePickerAndCapture, type PickerHandle } from "./content-script";
 
 let activePickerHandle: PickerHandle | undefined;
+let basketMode = false;
 
 chrome.runtime.onMessage.addListener(
 	(
@@ -10,13 +14,15 @@ chrome.runtime.onMessage.addListener(
 		sendResponse: (response: unknown) => void,
 	) => {
 		if (message.type === "omp:activate-picker") {
-			const { channelId, note } = message as {
+			const { channelId, note, multiPick } = message as {
 				channelId: string;
 				note?: string;
+				multiPick?: boolean;
 				type: string;
 			};
 
-			// Cancel any existing active picker before starting a new one
+			basketMode = !!multiPick;
+
 			if (activePickerHandle) {
 				activePickerHandle.deactivate();
 				activePickerHandle = undefined;
@@ -26,6 +32,18 @@ chrome.runtime.onMessage.addListener(
 				document,
 				{ channelId, note },
 				(event: BrowserFeedbackEvent | null) => {
+					if (basketMode) {
+						if (event && event.type === "dom.selection") {
+							chrome.runtime.sendMessage({
+								type: "omp:add-to-basket",
+								event: event as DomSelectionFeedback,
+								note: note ?? "",
+							});
+						}
+						// Keep picker active for multi-pick mode
+						chrome.runtime.sendMessage({ type: "omp:picker-ready" });
+						return;
+					}
 					activePickerHandle = undefined;
 					if (!event) {
 						sendResponse({ ok: false, error: "Picker cancelled" });

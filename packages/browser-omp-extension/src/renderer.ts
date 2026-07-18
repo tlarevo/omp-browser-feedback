@@ -1,17 +1,21 @@
 import type {
+	BatchFeedback,
 	BrowserFeedbackEvent,
 	DomSelectionFeedback,
 } from "@oh-my-pi/browser-protocol";
 
+function renderElementRef(el: DomSelectionFeedback["element"]): string {
+	const tag = el.tagName.toLowerCase();
+	const id = el.attributes.id ? `#${el.attributes.id}` : "";
+	const cls = el.attributes.class
+		? `.${el.attributes.class.trim().split(/\s+/).slice(0, 2).join(".")}`
+		: "";
+	return `<${tag}${id}${cls}> (${el.selector})`;
+}
+
 export function formatFeedbackAsPrompt(event: BrowserFeedbackEvent): string {
 	if (event.type === "dom.selection") {
-		const el = event.element;
-		const tag = el.tagName.toLowerCase();
-		const id = el.attributes.id ? `#${el.attributes.id}` : "";
-		const cls = el.attributes.class
-			? `.${el.attributes.class.trim().split(/\s+/).slice(0, 2).join(".")}`
-			: "";
-		const elementRef = `<${tag}${id}${cls}> (${el.selector})`;
+		const elementRef = renderElementRef(event.element);
 		const lines = [
 			`Browser feedback from Chrome extension:`,
 			`Page: ${event.page.url}`,
@@ -20,6 +24,9 @@ export function formatFeedbackAsPrompt(event: BrowserFeedbackEvent): string {
 		if (event.note) lines.push(`Note: "${event.note}"`);
 		lines.push("", "Please apply this change.");
 		return lines.join("\n");
+	}
+	if (event.type === "batch.feedback") {
+		return formatBatchAsPrompt(event);
 	}
 	if (event.type === "page.screenshot") {
 		const lines = [
@@ -31,6 +38,24 @@ export function formatFeedbackAsPrompt(event: BrowserFeedbackEvent): string {
 		return lines.join("\n");
 	}
 	return "Browser feedback received from Chrome extension. Please review and apply changes.";
+}
+
+function formatBatchAsPrompt(batch: BatchFeedback): string {
+	const lines: string[] = [
+		`Browser batch feedback from Chrome extension (${batch.items.length} items):`,
+		``,
+	];
+	for (let i = 0; i < batch.items.length; i++) {
+		const item = batch.items[i];
+		const elementRef = renderElementRef(item.element);
+		lines.push(`${i + 1}. ${elementRef}`);
+		if (item.note) lines.push(`   Note: "${item.note}"`);
+	}
+	if (batch.batchNote) {
+		lines.push(``, `Batch note: "${batch.batchNote}"`);
+	}
+	lines.push(``, `Please apply all changes.`);
+	return lines.join("\n");
 }
 
 const MAX_TEXT = 2_000;
@@ -96,6 +121,25 @@ export function renderBrowserFeedbackContext(
 	event: BrowserFeedbackEvent,
 ): string {
 	if (event.type === "dom.selection") return renderDomSelection(event);
+
+	if (event.type === "batch.feedback") {
+		const items = event.items
+			.map(
+				(item, i) =>
+					`${i + 1}. ${renderElementRef(item.element)}${item.note ? ` — "${item.note}"` : ""}`,
+			)
+			.join("\n");
+		const note = event.batchNote ? `\nBatch note: "${event.batchNote}"\n` : "";
+		return `The user provided batch browser feedback (${event.items.length} items):
+
+Feedback
+- Event ID: ${event.eventId}
+- Created at: ${event.createdAt}${note}
+Items
+${items}
+
+Locate the owning source/components in the current project and address each item. Treat selector and HTML data as runtime evidence; verify each source implementation before editing.`;
+	}
 
 	return `The user captured a browser screenshot and provided implementation feedback.
 

@@ -87,9 +87,20 @@ export interface PageScreenshotFeedback {
 	screenshot: BrowserScreenshotRef;
 }
 
+export interface BatchFeedback {
+	protocolVersion: BrowserProtocolVersion;
+	eventId: string;
+	type: "batch.feedback";
+	channelId: string;
+	createdAt: string;
+	items: DomSelectionFeedback[];
+	batchNote?: string;
+}
+
 export type BrowserFeedbackEvent =
 	| DomSelectionFeedback
-	| PageScreenshotFeedback;
+	| PageScreenshotFeedback
+	| BatchFeedback;
 
 export interface BrowserAck {
 	ok: true;
