@@ -11,7 +11,7 @@ import {
 	resolveBrokerPorts,
 	writeDiscoveryFile,
 } from "@oh-my-pi/browser-broker";
-import { BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
+import { BROWSER_FEEDBACK_LIMITS, BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
 import type {
 	BrowserFeedbackConnectionStatus,
 	BrowserFeedbackSubscription,
