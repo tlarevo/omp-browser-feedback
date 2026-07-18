@@ -34,7 +34,7 @@ import {
 	validateSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
 import type { Server } from "bun";
-import { isAuthorizedBrowserRequest, isAuthorizedRequest } from "./auth";
+import { isAuthorizedBrowserRequest, isAuthorizedRequest, safeStringCompare } from "./auth";
 import { defaultFeedbackDataDir, defaultPairingRegistryPath } from "./discovery";
 import { InMemoryFeedbackStore } from "./feedback-store";
 import { JournalStore } from "./journal";
@@ -492,23 +492,6 @@ export async function createBrowserBrokerServer(
 					wirePayload = v1Result.value;
 				}
 				let event: BrowserFeedbackEvent = result.value;
-				if (parsed.screenshotBytes && event.screenshot) {
-					const saved = await screenshots.save({
-						eventId: event.eventId,
-						mimeType: event.screenshot.mimeType,
-						bytes: parsed.screenshotBytes,
-					});
-					event = {
-						...event,
-						screenshot: { ...event.screenshot, ref: saved.ref },
-					};
-					if (wirePayload.screenshot) {
-						wirePayload = {
-							...wirePayload,
-							screenshot: { ...wirePayload.screenshot, ref: saved.ref },
-						};
-					}
-				}
 				// Store the original event (tracks eventId for ACK matching).
 				await feedback.add({
 					channelId: event.channelId,
