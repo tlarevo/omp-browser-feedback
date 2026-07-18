@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
 import * as path from "node:path";
-import { JournalStore } from "../src/journal";
+import { type JournalBounds, JournalStore } from "../src/journal";
 
 const dirs: string[] = [];
 
@@ -23,7 +23,7 @@ function encodedChannelId(channelId: string): string {
 }
 
 async function makeStore(
-	bounds?: Partial<Parameters<typeof JournalStore.prototype.constructor>[1]>,
+	bounds?: Partial<JournalBounds>,
 ) {
 	const dir = await fsp.mkdtemp(path.join("/tmp", "omp-journal-test-"));
 	dirs.push(dir);

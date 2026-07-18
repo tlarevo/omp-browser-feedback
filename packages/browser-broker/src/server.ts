@@ -28,6 +28,7 @@ import {
 	templateToRegex,
 	utf8ByteLength,
 	validateFeedbackEvent,
+	validateFeedbackAck,
 	validateSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
 import type { Server } from "bun";
@@ -623,7 +624,7 @@ export async function createBrowserBrokerServer(
 						},
 						{ status: 404 },
 					);
-				return new Response(image.bytes, {
+				return new Response(image.bytes as unknown as Blob, {
 					headers: {
 						"Content-Type": image.mimeType,
 						"Cache-Control": "no-store",
