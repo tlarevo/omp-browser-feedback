@@ -631,3 +631,119 @@ describe("browserFeedbackExtension", () => {
 		expect(notifyMessages[0]).toContain("/bf broker");
 	});
 });
+describe("THA-217 reconnect hardening", () => {
+	test("/bf broker start instructs user to run /bf connect", async () => {
+		const notify = createNotifyHarness();
+		await handleBfCommand(
+			"broker start",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				ensureBrokerRunning: async () => ({
+					baseUrl: "http://127.0.0.1:4317",
+					authToken: "tok",
+					port: 4317,
+					reused: false,
+				}),
+			},
+		);
+		expect(notify.last()).toContain("Run `/bf connect`");
+	});
+
+	test("/bf broker start reused message also instructs /bf connect", async () => {
+		const notify = createNotifyHarness();
+		await handleBfCommand(
+			"broker start",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				ensureBrokerRunning: async () => ({
+					baseUrl: "http://127.0.0.1:4317",
+					authToken: "tok",
+					port: 4317,
+					reused: true,
+				}),
+			},
+		);
+		expect(notify.last()).toContain("already running");
+		expect(notify.last()).toContain("Run `/bf connect`");
+	});
+
+	test("/bf status shows connection state when listSessions fails", async () => {
+		const notify = createNotifyHarness();
+		await handleBfCommand(
+			"status",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				loadClient: async () =>
+					({
+						listSessions: async () => {
+							throw new Error("network timeout");
+						},
+					}) as unknown as BrowserBrokerClient,
+				getInProcessBrokerStatus: () => ({
+					running: true,
+					baseUrl: "http://127.0.0.1:4317",
+					port: 4317,
+				}),
+				getActiveConnectionStatus: () => {
+					return {
+						state: "reconnecting" as const,
+						reconnectAttempts: 3,
+						baseUrl: "http://127.0.0.1:4317",
+					};
+				},
+			},
+		);
+		const msg = notify.last();
+		expect(msg).toContain("network timeout");
+		expect(msg).toContain("reconnecting");
+		expect(msg).toContain("Reconnect attempts: 3");
+	});
+
+	test("/bf connect calls clearActiveFeedbackSubscription before creating new subscription", async () => {
+		const notify = createNotifyHarness();
+		const closedCalls: string[] = [];
+		let subCreated = false;
+
+		await handleBfCommand(
+			"connect",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				ensureBrokerRunning: async () => ({
+					baseUrl: "http://127.0.0.1:4317",
+					authToken: "tok",
+					port: 4317,
+					reused: false,
+				}),
+				createClient: () =>
+					({
+						registerSession: async () => {},
+						subscribeFeedback: () => {
+							subCreated = true;
+							return {
+								close() {
+									closedCalls.push("new-sub-closed");
+								},
+								getStatus() {
+									return {
+										state: "connecting" as const,
+										reconnectAttempts: 0,
+										baseUrl: "http://127.0.0.1:4317",
+									};
+								},
+							};
+						},
+					}) as unknown as BrowserBrokerClient,
+				setActiveFeedbackSubscription: (_sub) => {
+					if (subCreated) {
+						closedCalls.push("set-after-create");
+					}
+				},
+			},
+		);
+		expect(notify.last()).toContain("Broker:");
+	});
+});

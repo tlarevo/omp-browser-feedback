@@ -76,6 +76,8 @@ export interface BrowserFeedbackSubscriptionOptions {
 	onStateChange?: (status: BrowserFeedbackConnectionStatus) => void;
 	setTimeout?: BrowserBrokerTimerFn;
 	clearTimeout?: (handle: BrowserBrokerTimeoutHandle) => void;
+	/** Injected for deterministic jitter testing; defaults to Math.random. */
+	random?: () => number;
 }
 
 const MAX_DEDUPED_EVENT_IDS = 1000;
@@ -273,7 +275,7 @@ export class BrowserBrokerClient {
 			host: discovery.host,
 			ports: [discovery.port],
 		});
-		if (!broker) {
+		if (!broker || broker.brokerId !== discovery.broker_id) {
 			throw new Error("Browser broker not reachable");
 		}
 		return {
@@ -308,8 +310,14 @@ export class BrowserBrokerClient {
 			((handle: BrowserBrokerTimeoutHandle) => {
 				globalThis.clearTimeout(handle);
 			});
+		const random = options.random ?? Math.random;
 		const reconnect =
 			options.reconnect ?? (() => this.#reconnectFromDiscovery());
+
+		const jitteredDelay = (attempt: number): number => {
+			const base = Math.min(500 * 2 ** (attempt - 1), 30_000);
+			return base * (0.75 + random() * 0.25);
+		};
 
 		let socket: BrowserBrokerSocket | undefined;
 		let reconnectAttempts = 0;
@@ -383,7 +391,7 @@ export class BrowserBrokerClient {
 				state = "reconnecting";
 				publishStatus();
 
-				const delay = Math.min(500 * 2 ** (reconnectAttempts - 1), 30_000);
+				const delay = jitteredDelay(reconnectAttempts);
 				reconnectTimer = setReconnectTimer(async () => {
 					reconnectTimer = undefined;
 					if (closed) return;
@@ -406,7 +414,7 @@ export class BrowserBrokerClient {
 				state = "reconnecting";
 				publishStatus();
 
-				const delay = Math.min(500 * 2 ** (reconnectAttempts - 1), 30_000);
+				const delay = jitteredDelay(reconnectAttempts);
 				reconnectTimer = setReconnectTimer(async () => {
 					reconnectTimer = undefined;
 					if (closed) return;
@@ -478,8 +486,14 @@ export async function createBrowserBrokerClientFromDiscovery(
 ): Promise<BrowserBrokerClient | undefined> {
 	const discovery = await readDiscoveryFile(discoveryPath);
 	if (!discovery) return undefined;
+	// Probe the advertised host/port to verify the broker is alive and compatible.
+	const broker = await discoverCompatibleBroker({
+		host: discovery.host,
+		ports: [discovery.port],
+	});
+	if (!broker || broker.brokerId !== discovery.broker_id) return undefined;
 	return new BrowserBrokerClient({
-		baseUrl: discovery.base_url,
+		baseUrl: broker.baseUrl,
 		authToken: discovery.auth_token,
 		discoveryPath,
 	});

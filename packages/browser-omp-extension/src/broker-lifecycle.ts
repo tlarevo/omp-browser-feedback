@@ -28,6 +28,9 @@ let _activeBroker: BrowserBrokerServer | undefined;
 let _activeDiscoveryPath: string | undefined;
 let _activeAuthToken: string | undefined;
 let _activeSubscription: BrowserFeedbackSubscription | undefined;
+let _onStatusChange:
+	| ((status: BrowserFeedbackConnectionStatus) => void)
+	| undefined;
 
 function defaultDiscoveryPath(): string {
 	return path.join(Bun.env.HOME ?? "~", ".omp", "browser-broker.json");
@@ -182,6 +185,22 @@ export function clearActiveFeedbackSubscription(): void {
 	_activeSubscription?.close();
 	_activeSubscription = undefined;
 }
+export function setStatusChangeCallback(
+	cb: (status: BrowserFeedbackConnectionStatus) => void,
+): void {
+	_onStatusChange = cb;
+}
+
+export function clearStatusChangeCallback(): void {
+	_onStatusChange = undefined;
+}
+
+export function getStatusChangeCallback():
+	| ((status: BrowserFeedbackConnectionStatus) => void)
+	| undefined {
+	return _onStatusChange;
+}
+
 export function getActiveFeedbackConnectionStatus():
 	| BrowserFeedbackConnectionStatus
 	| undefined {
