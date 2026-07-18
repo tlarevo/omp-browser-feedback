@@ -148,6 +148,91 @@ async function handleElementSelected(
 	}
 }
 
+async function openPopupWithHint(hint: string): Promise<void> {
+	await setStorage({ pickerHint: hint });
+	await chrome.action.openPopup().catch(() => {});
+}
+
+async function signalUnavailable(title: string): Promise<void> {
+	await chrome.action.setBadgeText({ text: "!" });
+	await chrome.action.setBadgeBackgroundColor({ color: "#cc0000" });
+	await chrome.action.setTitle({ title });
+	setTimeout(() => {
+		void chrome.action.setBadgeText({ text: "" });
+		void chrome.action.setTitle({ title: "" });
+	}, 4000);
+}
+
+async function handleTogglePickerCommand(): Promise<void> {
+	const brokerResult = await handleDiscoverBroker();
+	const baseUrl =
+		brokerResult.ok && brokerResult.data ? brokerResult.data.baseUrl : undefined;
+	if (!baseUrl) {
+		await openPopupWithHint(
+			"No OMP broker found. Start a session, then try the shortcut again.",
+		);
+		return;
+	}
+
+	const stored = await chrome.storage.local.get([
+		"selectedSessionId",
+		"browserCapabilityToken",
+	]);
+	const capabilityToken =
+		typeof stored.browserCapabilityToken === "string"
+			? stored.browserCapabilityToken
+			: undefined;
+	if (!capabilityToken) {
+		await openPopupWithHint(
+			"Pair this browser first, then use the picker shortcut.",
+		);
+		return;
+	}
+	const selectedSessionId =
+		typeof stored.selectedSessionId === "string"
+			? stored.selectedSessionId
+			: undefined;
+
+	let channelId: string | undefined;
+	if (selectedSessionId) {
+		try {
+			const sessions = await listSessions({ baseUrl, capabilityToken });
+			channelId = sessions.find(
+				(session) => session.sessionId === selectedSessionId,
+			)?.channelId;
+		} catch {
+			channelId = undefined;
+		}
+	}
+	if (!channelId) {
+		await openPopupWithHint("Select a session to arm the picker shortcut.");
+		return;
+	}
+
+	const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+	if (tab?.id === undefined) {
+		await signalUnavailable("OMP: no active tab to pick from");
+		return;
+	}
+	await setStorage({ brokerBaseUrl: baseUrl });
+	try {
+		await chrome.tabs.sendMessage(tab.id, {
+			type: "omp:toggle-picker",
+			channelId,
+		});
+	} catch {
+		await signalUnavailable(
+			"OMP: picker unavailable on this page (e.g. chrome:// or Web Store)",
+		);
+	}
+}
+
+chrome.commands?.onCommand.addListener((command) => {
+	if (command === "toggle-picker") {
+		void handleTogglePickerCommand();
+	}
+});
+
 chrome.runtime.onMessage.addListener(
 	(
 		message: { type: string; [key: string]: unknown },
