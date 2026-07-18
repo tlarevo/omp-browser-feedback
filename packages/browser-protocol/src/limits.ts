@@ -5,4 +5,5 @@ export const BROWSER_FEEDBACK_LIMITS = {
 	maxAttributeCount: 80,
 	maxComputedStyleCount: 80,
 	maxScreenshotBytes: 10 * 1024 * 1024,
+	maxStitchedHeight: 16_384,
 } as const;

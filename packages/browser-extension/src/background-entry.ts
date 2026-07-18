@@ -1,7 +1,10 @@
-import type {
-	BrowserFeedbackEvent,
-	BrowserSessionRegistration,
-	DomSelectionFeedback,
+import {
+	BROWSER_PROTOCOL_VERSION,
+	type BrowserFeedbackEvent,
+	type BrowserPageContext,
+	type BrowserSessionRegistration,
+	type DomSelectionFeedback,
+	type PageScreenshotFeedback,
 } from "@oh-my-pi/browser-protocol";
 import {
 	discoverBroker,
@@ -9,6 +12,16 @@ import {
 	probeBroker,
 	submitFeedback,
 } from "./background";
+import {
+	CAPTURE_INTERVAL_MS,
+	calculateStitchPlan,
+	cancelActiveCapture,
+	type FullpageCaptureContext,
+	getActiveCapture,
+	SETTLE_DELAY_MS,
+	setActiveCapture,
+	stitchFrames,
+} from "./fullpage";
 import { captureAndCrop } from "./screenshot";
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -147,6 +160,221 @@ async function handleElementSelected(
 		return { ok: false, error: String(error) };
 	}
 }
+// ── Fullpage capture orchestration ─────────────────────────────────────────
+async function handleStartFullpageCapture(
+	tabId: number,
+	windowId: number,
+	channelId: string,
+	baseUrl: string,
+	capabilityToken: string,
+	note?: string,
+): Promise<MessageResponse<void>> {
+	const originalScrollY = 0;
+	try {
+		// Measure page dimensions
+		const dims = await chrome.tabs.sendMessage(tabId, {
+			type: "omp:fullpage-measure",
+		});
+		if (!dims?.ok || !dims.data) {
+			return { ok: false, error: "Failed to measure page" };
+		}
+		const {
+			scrollHeight,
+			viewportHeight,
+			devicePixelRatio: dpr,
+			scrollY: originalScrollY,
+		} = dims.data;
+		const plan = calculateStitchPlan(scrollHeight, viewportHeight);
+
+		if (plan.steps.length === 0) {
+			return { ok: false, error: "Nothing to capture" };
+		}
+
+		const ctx: FullpageCaptureContext = {
+			tabId,
+			windowId,
+			channelId,
+			originalScrollY: scrollY,
+			scrollHeight,
+			viewportHeight,
+			dpr,
+			plan,
+			frames: [],
+			cancelled: false,
+		};
+		setActiveCapture(ctx);
+
+		// Show initial progress
+		await chrome.action.setBadgeText({ text: `0/${plan.steps.length}`, tabId });
+		await chrome.action.setBadgeBackgroundColor({ color: "#2196F3", tabId });
+
+		// Hide fixed elements after first frame (frame 0 captures them)
+		let fixedHidden = false;
+
+		for (let i = 0; i < plan.steps.length; i++) {
+			if (ctx.cancelled) break;
+
+			const step = plan.steps[i];
+
+			// Scroll to position
+			await chrome.tabs.sendMessage(tabId, {
+				type: "omp:fullpage-scroll-to",
+				y: step.y,
+			});
+
+			// Settle delay for lazy content
+			{
+				const { promise, resolve } = Promise.withResolvers<void>();
+				setTimeout(resolve, SETTLE_DELAY_MS);
+				await promise;
+			}
+
+			if (ctx.cancelled) break;
+
+			// Hide fixed elements after first frame
+			if (i === 1 && !fixedHidden) {
+				await chrome.tabs.sendMessage(tabId, {
+					type: "omp:fullpage-hide-fixed",
+				});
+				fixedHidden = true;
+			}
+
+			// Capture visible tab
+			let dataUrl: string;
+			try {
+				dataUrl = await chrome.tabs.captureVisibleTab(windowId, {
+					format: "png",
+				});
+			} catch {
+				// Rate-limited or other error — skip this frame
+				continue;
+			}
+
+			const res = await fetch(dataUrl);
+			const blob = await res.blob();
+			const bitmap = await createImageBitmap(blob);
+			ctx.frames.push(bitmap);
+
+			// Update progress badge
+			await chrome.action.setBadgeText({
+				text: `${i + 1}/${plan.steps.length}`,
+				tabId,
+			});
+
+			if (i < plan.steps.length - 1) {
+				const { promise, resolve } = Promise.withResolvers<void>();
+				setTimeout(resolve, CAPTURE_INTERVAL_MS - SETTLE_DELAY_MS);
+				await promise;
+			}
+		}
+
+		// Restore scroll and fixed elements
+		await chrome.tabs.sendMessage(tabId, {
+			type: "omp:fullpage-restore",
+			y: ctx.originalScrollY,
+		});
+
+		// Clear badge
+		await chrome.action.setBadgeText({ text: "", tabId });
+
+		if (ctx.cancelled || ctx.frames.length === 0) {
+			// Clean up frames
+			for (const f of ctx.frames) f.close();
+			setActiveCapture(null);
+			return ctx.cancelled
+				? { ok: false, error: "Capture cancelled" }
+				: { ok: false, error: "No frames captured" };
+		}
+
+		// Stitch frames
+		const result = await stitchFrames(ctx.frames, plan, dpr);
+		for (const f of ctx.frames) f.close();
+		setActiveCapture(null);
+
+		// Build page context for feedback event
+		const pageContext: BrowserPageContext = await chrome.tabs
+			.sendMessage(tabId, { type: "omp:fullpage-measure" })
+			.then(
+				(d) =>
+					({
+						url: "", // will be filled below
+						title: "",
+						viewport: {
+							width: 0,
+							height: d.data.viewportHeight,
+							devicePixelRatio: d.data.devicePixelRatio,
+						},
+					}) as BrowserPageContext,
+			);
+
+		// Get actual page URL and title from tab
+		const tab = await chrome.tabs.get(tabId);
+		pageContext.url = tab.url ?? "";
+		pageContext.title = tab.title ?? "";
+		pageContext.viewport.width = tab.width ?? 0;
+
+		const eventId = crypto.randomUUID();
+		const event: PageScreenshotFeedback = {
+			protocolVersion: BROWSER_PROTOCOL_VERSION,
+			eventId,
+			type: "page.screenshot",
+			channelId,
+			createdAt: new Date().toISOString(),
+			page: pageContext,
+			...(note ? { note } : {}),
+			screenshot: {
+				kind: "full-page",
+				ref: "pending",
+				mimeType: "image/png",
+				width: result.width,
+				height: result.height,
+				...(result.downscaled ? { downscaled: true } : {}),
+			},
+		};
+
+		await submitFeedback({
+			baseUrl,
+			capabilityToken,
+			event,
+			screenshot: result.blob,
+		});
+
+		return { ok: true, data: undefined };
+	} catch (error) {
+		// Always restore on error
+		try {
+			await chrome.tabs.sendMessage(tabId, {
+				type: "omp:fullpage-restore",
+				y: originalScrollY,
+			});
+		} catch {}
+		await chrome.action.setBadgeText({ text: "", tabId });
+		for (const f of getActiveCapture()?.frames ?? []) f.close();
+		setActiveCapture(null);
+		return { ok: false, error: String(error) };
+	}
+}
+
+async function handleGetCaptureStatus(): Promise<
+	MessageResponse<{ capturing: boolean; current: number; total: number } | null>
+> {
+	const capture = getActiveCapture();
+	if (!capture) {
+		return { ok: true, data: null };
+	}
+	return {
+		ok: true,
+		data: {
+			capturing: !capture.cancelled,
+			current: capture.frames.length,
+			total: capture.plan.steps.length,
+		},
+	};
+}
+
+function handleCancelCapture(): void {
+	cancelActiveCapture();
+}
 
 chrome.runtime.onMessage.addListener(
 	(
@@ -222,6 +450,73 @@ chrome.runtime.onMessage.addListener(
 				sendResponse,
 			);
 			return true;
+		}
+		if (message.type === "omp:start-fullpage-capture") {
+			const channelId =
+				typeof message.channelId === "string" ? message.channelId : undefined;
+			const baseUrl =
+				typeof message.baseUrl === "string" ? message.baseUrl : undefined;
+			const capabilityToken =
+				typeof message.capabilityToken === "string"
+					? message.capabilityToken
+					: undefined;
+			const note = typeof message.note === "string" ? message.note : undefined;
+			if (!channelId || !baseUrl || !capabilityToken) {
+				sendResponse({ ok: false, error: "Missing fullpage capture context" });
+				return false;
+			}
+			const tabId = sender.tab?.id ?? -1;
+			const windowId = sender.tab?.windowId;
+			if (tabId === -1 || !windowId) {
+				chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
+					const activeTab = tabs[0];
+					if (!activeTab?.id || !activeTab.windowId) {
+						sendResponse({ ok: false, error: "No active tab" });
+						return;
+					}
+					setStorage({ brokerBaseUrl: baseUrl })
+						.then(() =>
+							handleStartFullpageCapture(
+								activeTab.id!,
+								activeTab.windowId!,
+								channelId,
+								baseUrl,
+								capabilityToken,
+								note,
+							),
+						)
+						.then(sendResponse)
+						.catch((error) =>
+							sendResponse({ ok: false, error: String(error) }),
+						);
+				});
+				return true;
+			}
+			setStorage({ brokerBaseUrl: baseUrl })
+				.then(() =>
+					handleStartFullpageCapture(
+						tabId,
+						windowId,
+						channelId,
+						baseUrl,
+						capabilityToken,
+						note,
+					),
+				)
+				.then(sendResponse)
+				.catch((error) => sendResponse({ ok: false, error: String(error) }));
+			return true;
+		}
+
+		if (message.type === "omp:get-capture-status") {
+			handleGetCaptureStatus().then(sendResponse);
+			return true;
+		}
+
+		if (message.type === "omp:cancel-fullpage-capture") {
+			handleCancelCapture();
+			sendResponse({ ok: true });
+			return false;
 		}
 
 		return false;

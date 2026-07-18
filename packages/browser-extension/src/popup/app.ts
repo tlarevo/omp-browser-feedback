@@ -158,7 +158,64 @@ async function initPopup(): Promise<void> {
 			});
 			window.close();
 		},
+		async onStartFullpageCapture(sessionId) {
+			const session = currentSessions.find(
+				(item) => item.sessionId === sessionId,
+			);
+			if (!session) return;
+			await sendToBackground({
+				type: "omp:start-fullpage-capture",
+				channelId: session.channelId,
+				baseUrl: currentBaseUrl,
+				capabilityToken: currentCapabilityToken,
+			});
+			render({
+				kind: "capturing",
+				baseUrl: currentBaseUrl,
+				selectedSessionId: currentSelectedId,
+				sessions: currentSessions,
+				current: 0,
+				total: 0,
+			});
+			pollCaptureStatus();
+		},
+
+		async onCancelCapture() {
+			await sendToBackground({ type: "omp:cancel-fullpage-capture" });
+			await refreshFromBroker();
+		},
 	};
+	async function pollCaptureStatus(): Promise<void> {
+		const status = await sendToBackground<{
+			ok: boolean;
+			data: { capturing: boolean; current: number; total: number } | null;
+		}>({ type: "omp:get-capture-status" });
+
+		if (!status?.ok || !status.data) {
+			await refreshFromBroker();
+			return;
+		}
+
+		if (!status.data.capturing) {
+			await refreshFromBroker();
+			return;
+		}
+
+		render({
+			kind: "capturing",
+			baseUrl: currentBaseUrl,
+			selectedSessionId: currentSelectedId,
+			sessions: currentSessions,
+			current: status.data.current,
+			total: status.data.total,
+		});
+
+		// Poll again in 500ms
+		const { promise, resolve } = Promise.withResolvers<void>();
+		setTimeout(resolve, 500);
+		await promise;
+		pollCaptureStatus();
+	}
 
 	async function refreshFromBroker(): Promise<void> {
 		const brokerResult = await sendToBackground<DiscoverBrokerResponse>({
