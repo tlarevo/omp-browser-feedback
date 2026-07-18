@@ -54,6 +54,18 @@ const accessibilitySchema = type({
 
 const stringRecordSchema = type({ "[string]": "string" });
 
+const componentAncestorSchema = type({
+	"+": "reject",
+	name: nonEmptyString,
+	"source?": "string",
+});
+
+const componentContextSchema = type({
+	"+": "reject",
+	framework: nonEmptyString,
+	ancestors: componentAncestorSchema.array(),
+});
+
 const elementSchema = type({
 	"+": "reject",
 	selector: nonEmptyString,
@@ -65,6 +77,7 @@ const elementSchema = type({
 	bounds: boundsSchema,
 	computedStyles: stringRecordSchema,
 	"accessibility?": accessibilitySchema,
+	"component?": componentContextSchema,
 });
 
 const screenshotSchema = type({

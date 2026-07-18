@@ -44,6 +44,16 @@ export interface BrowserAccessibilityContext {
 	description?: string;
 }
 
+export interface BrowserComponentAncestor {
+	name: string;
+	source?: string;
+}
+
+export interface BrowserComponentContext {
+	framework: string;
+	ancestors: BrowserComponentAncestor[];
+}
+
 export interface BrowserElementContext {
 	selector: string;
 	xpath?: string;
@@ -54,6 +64,7 @@ export interface BrowserElementContext {
 	bounds: BrowserElementBounds;
 	computedStyles: Record<string, string>;
 	accessibility?: BrowserAccessibilityContext;
+	component?: BrowserComponentContext;
 }
 
 export interface BrowserScreenshotRef {

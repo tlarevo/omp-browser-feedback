@@ -9,6 +9,10 @@ import {
 	probeBroker,
 	submitFeedback,
 } from "./background";
+import {
+	type ComponentDetectionResult,
+	detectFrameworkComponent,
+} from "./component-detection";
 import { captureAndCrop } from "./screenshot";
 
 const DEFAULT_HOST = "127.0.0.1";
@@ -89,9 +93,27 @@ async function handleStartPicker(
 	});
 }
 
+async function detectComponent(
+	tabId: number,
+	selector: string,
+): Promise<ComponentDetectionResult | null> {
+	try {
+		const results = await chrome.scripting.executeScript({
+			target: { tabId },
+			world: "MAIN",
+			func: detectFrameworkComponent,
+			args: [selector],
+		});
+		return (results?.[0]?.result as ComponentDetectionResult | null) ?? null;
+	} catch {
+		return null;
+	}
+}
+
 async function handleElementSelected(
 	event: BrowserFeedbackEvent,
 	windowId: number | undefined,
+	tabId: number | undefined,
 ): Promise<MessageResponse<void>> {
 	try {
 		const stored = await chrome.storage.local.get([
@@ -113,26 +135,40 @@ async function handleElementSelected(
 		let eventToSubmit: BrowserFeedbackEvent = event;
 		let screenshot: Blob | undefined;
 
-		if (windowId !== undefined && event.type === "dom.selection") {
+		if (event.type === "dom.selection") {
 			const domEvent = event as DomSelectionFeedback;
-			const captured = await captureAndCrop(
-				windowId,
-				domEvent.element.bounds,
-				domEvent.page.viewport.devicePixelRatio,
-			).catch(() => undefined);
 
-			if (captured) {
-				screenshot = captured.blob;
-				eventToSubmit = {
-					...domEvent,
-					screenshot: {
-						kind: captured.kind,
-						ref: "pending",
-						mimeType: "image/png",
-						width: captured.width,
-						height: captured.height,
-					},
-				};
+			// Detect framework component via MAIN world injection
+			if (tabId !== undefined) {
+				const component = await detectComponent(
+					tabId,
+					domEvent.element.selector,
+				);
+				if (component) {
+					domEvent.element.component = component;
+				}
+			}
+
+			if (windowId !== undefined) {
+				const captured = await captureAndCrop(
+					windowId,
+					domEvent.element.bounds,
+					domEvent.page.viewport.devicePixelRatio,
+				).catch(() => undefined);
+
+				if (captured) {
+					screenshot = captured.blob;
+					eventToSubmit = {
+						...domEvent,
+						screenshot: {
+							kind: captured.kind,
+							ref: "pending",
+							mimeType: "image/png",
+							width: captured.width,
+							height: captured.height,
+						},
+					};
+				}
 			}
 		}
 
@@ -218,9 +254,12 @@ chrome.runtime.onMessage.addListener(
 				return false;
 			}
 			const windowId = sender.tab?.windowId;
-			handleElementSelected(event as BrowserFeedbackEvent, windowId).then(
-				sendResponse,
-			);
+			const tabId = sender.tab?.id;
+			handleElementSelected(
+				event as BrowserFeedbackEvent,
+				windowId,
+				tabId,
+			).then(sendResponse);
 			return true;
 		}
 
