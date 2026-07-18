@@ -17,6 +17,7 @@ interface StoredState {
 	browserCapabilityToken?: string;
 	browserInstallId?: string;
 	selectedSessionId?: string;
+	basketCount?: number;
 }
 
 interface DiscoverBrokerResponse {
@@ -32,10 +33,22 @@ function readOptionalString(value: unknown, key: string): string | undefined {
 	return typeof candidate === "string" ? candidate : undefined;
 }
 
+function readOptionalNumber(value: unknown, key: string): number | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const record = value as Record<string, unknown>;
+	const candidate = record[key];
+	return typeof candidate === "number" ? candidate : undefined;
+}
+
 async function readStorage(): Promise<StoredState> {
 	return new Promise((resolve) => {
 		chrome.storage.local.get(
-			["browserCapabilityToken", "browserInstallId", "selectedSessionId"],
+			[
+				"browserCapabilityToken",
+				"browserInstallId",
+				"selectedSessionId",
+				"basketCount",
+			],
 			(items) => {
 				resolve({
 					browserCapabilityToken: readOptionalString(
@@ -44,6 +57,7 @@ async function readStorage(): Promise<StoredState> {
 					),
 					browserInstallId: readOptionalString(items, "browserInstallId"),
 					selectedSessionId: readOptionalString(items, "selectedSessionId"),
+					basketCount: readOptionalNumber(items, "basketCount"),
 				});
 			},
 		);
@@ -77,6 +91,19 @@ async function sendToBackground<T>(
 }
 
 const DEFAULT_PORTS: number[] = portsInRange(parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE));
+async function setBadgeText(text: string): Promise<void> {
+	return new Promise((resolve) => {
+		chrome.action.setBadgeText({ text }, resolve);
+	});
+}
+
+async function setBadgeBackgroundColor(color: string): Promise<void> {
+	return new Promise((resolve) => {
+		chrome.action.setBadgeBackgroundColor({ color }, resolve);
+	});
+}
+
+const DEFAULT_PORTS: number[] = Array.from({ length: 21 }, (_, i) => 4317 + i);
 
 function isUnauthorizedError(errorMessage: string | undefined): boolean {
 	return Boolean(
@@ -140,6 +167,15 @@ async function initPopup(): Promise<void> {
 	let currentBasket: BasketState | undefined;
 	let currentSelectedId: string | undefined;
 	let currentConsoleCapture = false;
+	let currentBasketCount = 0;
+
+	async function syncBadge(): Promise<void> {
+		const text = currentBasketCount > 0 ? String(currentBasketCount) : "";
+		await setBadgeText(text);
+		if (currentBasketCount > 0) {
+			await setBadgeBackgroundColor("#ff9800");
+		}
+	}
 
 	function renderReady(): void {
 		render({
@@ -246,7 +282,6 @@ async function initPopup(): Promise<void> {
 				currentBasket = toBasketState(basketResult.data);
 			}
 			renderReady();
-=======
 		async onToggleConsoleCapture(enabled) {
 			currentConsoleCapture = enabled;
 			// Query active tab for its origin, then set consent
@@ -267,7 +302,19 @@ async function initPopup(): Promise<void> {
 					// invalid URL, ignore
 				}
 			}
->>>>>>> tharinduabeydeera/tha-120-extension-opt-in-console-error-page-error-capture-attached
+=======
+
+		async onRefresh() {
+			await refreshFromBroker();
+		},
+
+		async onForget() {
+			await removeStorage(["browserCapabilityToken", "selectedSessionId"]);
+			currentCapabilityToken = "";
+			currentSelectedId = undefined;
+			currentSessions = [];
+			render({ kind: "unpaired", baseUrl: currentBaseUrl });
+>>>>>>> tharinduabeydeera/tha-125-extension-icons-connection-badge-and-popup-rework-loading
 		},
 	};
 	// If background wrote a pickerHint (e.g. shortcut fired with no session),
@@ -348,30 +395,8 @@ async function initPopup(): Promise<void> {
 		const stored = await readStorage();
 		currentCapabilityToken = stored.browserCapabilityToken ?? "";
 		currentSelectedId = stored.selectedSessionId;
-		// Load console capture consent for active tab's origin
-		currentConsoleCapture = false;
-		try {
-			const tabs = await chrome.tabs.query({
-				active: true,
-				currentWindow: true,
-			});
-			const tab = tabs[0];
-			if (tab?.url) {
-				const origin = new URL(tab.url).origin;
-				const consentResult = await sendToBackground<{
-					ok: boolean;
-					data?: boolean;
-				}>({
-					type: "omp:get-console-consent",
-					origin,
-				});
-				if (consentResult.ok && consentResult.data === true) {
-					currentConsoleCapture = true;
-				}
-			}
-		} catch {
-			// ignore — consent defaults to false
-		}
+		currentBasketCount = stored.basketCount ?? 0;
+		await syncBadge();
 
 		if (!currentCapabilityToken) {
 			render({ kind: "unpaired", baseUrl: currentBaseUrl });
@@ -421,6 +446,15 @@ async function initPopup(): Promise<void> {
 
 		renderReady();
 	}
+
+	// Live update: re-render when storage changes (e.g. basketCount updated by background)
+	chrome.storage.onChanged.addListener((changes, area) => {
+		if (area !== "local") return;
+		if (changes.basketCount) {
+			currentBasketCount = (changes.basketCount.newValue as number) ?? 0;
+			syncBadge();
+		}
+	});
 
 	render({ kind: "loading" });
 	await refreshFromBroker();

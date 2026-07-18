@@ -27,6 +27,35 @@ import { captureAndCrop } from "./screenshot";
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORTS: number[] = portsInRange(parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE));
 
+// ── Badge helpers ──────────────────────────────────────────────────────────
+
+async function updateBadgeFromStorage(): Promise<void> {
+	const stored = await chrome.storage.local.get(["basketCount"]);
+	const count = typeof stored.basketCount === "number" ? stored.basketCount : 0;
+	const text = count > 0 ? String(count) : "";
+	await new Promise<void>((resolve) => {
+		chrome.action.setBadgeText({ text }, resolve);
+	});
+	if (count > 0) {
+		await new Promise<void>((resolve) => {
+			chrome.action.setBadgeBackgroundColor({ color: "#ff9800" }, resolve);
+		});
+	}
+}
+
+// Keep badge in sync when storage changes (popup writes basketCount, etc.)
+chrome.storage.onChanged.addListener((changes, area) => {
+	if (area !== "local") return;
+	if ("basketCount" in changes) {
+		updateBadgeFromStorage();
+	}
+});
+
+// Sync badge on service worker startup
+updateBadgeFromStorage();
+
+// ── Message types ──────────────────────────────────────────────────────────
+
 type MessageResponse<T> = { ok: true; data: T } | { ok: false; error: string };
 
 async function setStorage(update: Record<string, unknown>): Promise<void> {
@@ -604,6 +633,13 @@ async function handleRegionSelected(
 			event: eventToSubmit,
 			screenshot,
 		});
+
+		// Clear badge after successful send
+		await chrome.storage.local.set({ basketCount: 0 });
+		await new Promise<void>((resolve) => {
+			chrome.action.setBadgeText({ text: "" }, resolve);
+		});
+
 		return { ok: true, data: undefined };
 	} catch (error) {
 		return { ok: false, error: String(error) };

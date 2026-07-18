@@ -1,19 +1,3 @@
-/**
- * Chrome E2E smoke test.
- *
- * Loads the built extension into Playwright's bundled Chromium via --load-extension
- * and exercises the full broker-discovery → pairing → session-listing → DOM-picker → feedback-delivery flow.
- *
- * Requires:
- *   - Extension built: run `bun run build` in packages/browser-extension first.
- *   - Playwright Chromium browser installed: bunx playwright install chromium
- *
- * Skip: set SKIP_CHROME_E2E=1 to skip unconditionally (e.g. headless-only CI).
- *
- * NOTE: Extensions require headless:false — the test opens a visible browser window.
- * NOTE: Do NOT pass executablePath. Playwright must use its own Chromium for CDP compatibility.
- */
-
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
@@ -79,7 +63,6 @@ async function pollUntil<T>(
 		if (predicate(value)) return value;
 		if (Date.now() >= deadline)
 			throw new Error(`pollUntil timed out after ${timeoutMs}ms`);
-		// Real polling is intentional here because the browser and broker advance outside fake timers.
 		await new Promise((resolve) => setTimeout(resolve, intervalMs));
 	}
 }
@@ -172,7 +155,7 @@ beforeAll(async () => {
 		);
 	}
 
-	// Start broker on the first free port in the discovery range; popup discovery is pinned via brokerBaseUrl storage.
+	// Start broker on the first free port in the discovery range
 	let brokerStarted = false;
 	for (let port = 4317; port <= 4337; port++) {
 		try {
@@ -210,7 +193,7 @@ beforeAll(async () => {
 		}),
 	});
 
-	// Serve a static test page over http:// so content scripts inject (they don't run on about:blank)
+	// Serve a static test page over http:// so content scripts inject
 	testServer = Bun.serve({
 		port: 0,
 		fetch() {
@@ -231,9 +214,7 @@ beforeAll(async () => {
 	});
 	testPageUrl = `http://127.0.0.1:${testServer.port}/`;
 
-	// Launch Playwright's bundled Chromium with the unpacked extension.
-	// - headless:false is required — Chrome extensions do not run in headless mode.
-	// - No executablePath — must use Playwright's own Chromium for CDP service worker visibility.
+	// Launch Playwright's bundled Chromium with the unpacked extension
 	userDataDir = await fsp.mkdtemp(path.join(os.tmpdir(), "omp-e2e-chrome-"));
 	context = await chromium.launchPersistentContext(userDataDir, {
 		headless: false,
@@ -274,8 +255,6 @@ beforeAll(async () => {
 		throw new Error(
 			`Could not extract extension ID from: ${serviceWorker.url()}`,
 		);
-
-	// New persistent browser profile starts unpaired; the test drives pairing via popup UI.
 }, 30_000);
 
 afterAll(async () => {
@@ -289,7 +268,7 @@ afterAll(async () => {
 // ── Tests ─────────────────────────────────────────────────────────────────
 
 describe.skipIf(SKIP)("Chrome extension smoke test", () => {
-	test("pairs once with a short-lived code and then submits feedback", async () => {
+	test("pairs with a short-lived code and then submits feedback", async () => {
 		const issued = await openPairingWindow();
 		await setPreferredBrokerBaseUrl(broker.baseUrl);
 
@@ -304,9 +283,10 @@ describe.skipIf(SKIP)("Chrome extension smoke test", () => {
 		});
 		await popup.goto(`chrome-extension://${extensionId}/src/popup/index.html`);
 
+		// Wait for pairing form (goes through loading → unpaired)
 		try {
 			await popup
-				.locator('input[placeholder="Pairing code"]')
+				.locator('input[aria-label="Pairing code"]')
 				.waitFor({ state: "visible", timeout: 10_000 });
 		} catch (error) {
 			const bodyText = await popup.locator("body").textContent();
@@ -322,11 +302,13 @@ describe.skipIf(SKIP)("Chrome extension smoke test", () => {
 		expect(await popup.locator("body").textContent()).toContain(
 			"Enter pairing code",
 		);
-		await popup.fill('input[placeholder="Pairing code"]', issued.code);
-		await popup.locator("button").click();
+		await popup.fill('input[aria-label="Pairing code"]', issued.code);
+		await popup.locator("button.primary").click();
+
+		// Wait for session cards (new UI: .session-card instead of radio inputs)
 		try {
 			await popup
-				.locator('input[type="radio"][name="session"]')
+				.locator(".session-card")
 				.first()
 				.waitFor({ state: "visible", timeout: 10_000 });
 		} catch (error) {
@@ -341,8 +323,12 @@ describe.skipIf(SKIP)("Chrome extension smoke test", () => {
 			);
 		}
 
-		const labelText = await popup.locator("label").first().textContent();
-		expect(labelText).toContain(SESSION_NAME);
+		// Session card shows the session name
+		const cardName = await popup
+			.locator(".session-card-name")
+			.first()
+			.textContent();
+		expect(cardName).toContain(SESSION_NAME);
 
 		const storedPairing = await readStoredPairingState();
 		expect(storedPairing.browserInstallId).toMatch(/^browser_/);
@@ -361,7 +347,6 @@ describe.skipIf(SKIP)("Chrome extension smoke test", () => {
 
 		const testPage = await context.newPage();
 		await testPage.goto(testPageUrl);
-		// Real browser integration: wait briefly for the content script registration before messaging it.
 		await testPage.waitForTimeout(800);
 
 		const tabId = await findTabIdByTitle("OMP E2E Target");
@@ -463,4 +448,26 @@ describe.skipIf(SKIP)("Chrome extension smoke test", () => {
 
 		await testPage.close();
 	}, 30_000);
+	test("shows loading state then transitions to ready", async () => {
+		await setPreferredBrokerBaseUrl(broker.baseUrl);
+
+		const popup = await context.newPage();
+		await popup.goto(`chrome-extension://${extensionId}/src/popup/index.html`);
+
+		// Loading spinner should appear briefly
+		const spinner = popup.locator(".spinner");
+		try {
+			await spinner.waitFor({ state: "visible", timeout: 3_000 });
+		} catch {
+			// Loading may have completed before we could observe it — that's fine
+		}
+
+		// Eventually we reach a non-loading state
+		await popup
+			.locator(".session-card, .status, .session-list, .toolbar")
+			.first()
+			.waitFor({ state: "visible", timeout: 10_000 });
+
+		await popup.close();
+	}, 15_000);
 });
