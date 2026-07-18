@@ -269,6 +269,13 @@ export function activatePicker(
 			if (!("key" in event)) return;
 			const key = event.key;
 			if (key === "Escape") {
+				if (stayActive && current) {
+					// First Escape: disarm hover, stay active
+					current = null;
+					overlay.style.display = "none";
+					hideTooltip(tooltip);
+					return;
+				}
 				deactivate();
 				callbacks.onExit();
 				return;

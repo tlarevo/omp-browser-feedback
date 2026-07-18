@@ -148,12 +148,12 @@ export function summarizePickedElement(element: Element): PickedElementSummary {
 
 export function capturePageContext(win: Window = window): BrowserPageContext {
 	return {
-		url: win.location.href,
-		title: win.document.title,
+		url: win.location?.href ?? "",
+		title: win.document?.title ?? "",
 		viewport: {
-			width: win.innerWidth,
-			height: win.innerHeight,
-			devicePixelRatio: win.devicePixelRatio,
+			width: win.innerWidth ?? 0,
+			height: win.innerHeight ?? 0,
+			devicePixelRatio: win.devicePixelRatio ?? 1,
 		},
 	};
 }
@@ -410,10 +410,12 @@ export function captureElementContext(
 	}
 
 	const computedStyles: Record<string, string> = {};
-	const styles = win.getComputedStyle(element);
 	const styleProperties = options.styleProperties ?? DEFAULT_STYLE_PROPERTIES;
-	for (const property of styleProperties) {
-		computedStyles[property] = styles.getPropertyValue(property);
+	if (typeof win.getComputedStyle === "function") {
+		const styles = win.getComputedStyle(element);
+		for (const property of styleProperties) {
+			computedStyles[property] = styles.getPropertyValue(property);
+		}
 	}
 
 	const rawText = element.textContent?.trim();

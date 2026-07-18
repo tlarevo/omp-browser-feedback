@@ -84,8 +84,8 @@ export function computeTooltipPosition(
 ): { left: number; top: number } {
 	const tW = tooltip.offsetWidth;
 	const tH = tooltip.offsetHeight;
-	const vpW = viewport?.width ?? window.innerWidth;
-	const vpH = viewport?.height ?? window.innerHeight;
+	const vpW = viewport?.width ?? globalThis.innerWidth ?? 0;
+	const vpH = viewport?.height ?? globalThis.innerHeight ?? 0;
 	const margin = 6;
 
 	// Try below target first, then above, then fallback to below
