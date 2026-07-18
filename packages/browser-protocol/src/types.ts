@@ -1,6 +1,13 @@
-import type { BROWSER_PROTOCOL_VERSION } from "./version";
+import type { BROWSER_PROTOCOL_VERSIONS } from "./version";
 
-export type BrowserProtocolVersion = typeof BROWSER_PROTOCOL_VERSION;
+/** Every protocol version this build can speak. */
+export type BrowserProtocolVersion = (typeof BROWSER_PROTOCOL_VERSIONS)[number];
+
+/** Declared version range for a peer. */
+export interface BrowserProtocolVersionRange {
+	min: BrowserProtocolVersion;
+	max: BrowserProtocolVersion;
+}
 
 export type BrowserSessionStatus = "active" | "idle" | "disconnected";
 
@@ -90,6 +97,12 @@ export interface PageScreenshotFeedback {
 export type BrowserFeedbackEvent =
 	| DomSelectionFeedback
 	| PageScreenshotFeedback;
+
+/** v2-only: OMP→broker acknowledgement after feedback injection. */
+export interface BrowserFeedbackAck {
+	type: "browser.feedback.ack";
+	eventId: string;
+}
 
 export interface BrowserAck {
 	ok: true;
