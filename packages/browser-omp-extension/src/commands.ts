@@ -189,8 +189,13 @@ export async function handleBfCommand(
 			? [
 					`Connection: ${renderConnectionState(connection.state)} (${connection.baseUrl})`,
 					`Reconnect attempts: ${connection.reconnectAttempts}`,
+					`Malformed messages: ${connection.malformedMessages}`,
 				]
-			: ["Connection: offline", "Reconnect attempts: 0"];
+			: [
+					"Connection: offline",
+					"Reconnect attempts: 0",
+					"Malformed messages: 0",
+				];
 		if (!client) {
 			notify(
 				[

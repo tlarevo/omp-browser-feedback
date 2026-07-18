@@ -125,7 +125,7 @@ export async function ensureBrokerRunning(
 			});
 			break;
 		} catch {
-			// port occupied or unusable, try the next candidate
+			console.debug("[browser-feedback] Port", port, "occupied, trying next");
 		}
 	}
 

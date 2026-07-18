@@ -121,6 +121,33 @@ describe("renderPopup", () => {
 		root.querySelector("button")?.click();
 		expect(picked).toBe("ses_2");
 	});
+
+	test("renders loading state with connecting message", () => {
+		const { root } = documentWithRoot();
+		renderPopup(root, { kind: "loading" });
+		expect(root.textContent).toContain("Connecting to broker");
+		expect(root.querySelector("button")).toBeNull();
+	});
+
+	test("renders no-broker state with retry button that fires onRetry", () => {
+		const { root } = documentWithRoot();
+		let retried = false;
+		renderPopup(
+			root,
+			{ kind: "no-broker", attemptedPorts: [4317, 4318] },
+			{
+				onRetry: () => {
+					retried = true;
+				},
+			},
+		);
+		expect(root.textContent).toContain("No OMP browser broker found");
+		expect(root.textContent).toContain("4317");
+		const retryBtn = root.querySelector("button");
+		expect(retryBtn).not.toBeNull();
+		retryBtn?.click();
+		expect(retried).toBe(true);
+	});
 });
 
 describe("ensureBrowserInstallId", () => {

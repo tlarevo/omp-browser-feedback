@@ -107,7 +107,9 @@ export async function discoverCompatibleBroker(
 			if (body.protocol_version !== BROWSER_PROTOCOL_VERSION) continue;
 			if (!body.broker_id) continue;
 			return { baseUrl, brokerId: body.broker_id, port };
-		} catch {}
+		} catch {
+			console.debug("[browser-broker] Probe failed on port", port);
+		}
 	}
 	return undefined;
 }
