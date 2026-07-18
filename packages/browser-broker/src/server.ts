@@ -148,6 +148,7 @@ async function parseFeedbackRequest(
 			throw new PayloadTooLargeError("Screenshot exceeds byte limit");
 		}
 		return { event, screenshotBytes: bytes };
+	}
 	const parsed = JSON.parse(eventPart) as Record<string, unknown>;
 
 	if (parsed.type === "batch.feedback") {
