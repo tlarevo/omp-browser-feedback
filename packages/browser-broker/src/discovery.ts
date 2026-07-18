@@ -194,7 +194,11 @@ export async function removeOwnedDiscoveryFile(
 	ownerPid: number,
 ): Promise<boolean> {
 	const discovery = await readDiscoveryFile(filePath);
-	if (discovery && discovery.pid !== ownerPid && isProcessAlive(discovery.pid)) {
+	if (
+		discovery &&
+		discovery.pid !== ownerPid &&
+		isProcessAlive(discovery.pid)
+	) {
 		return false;
 	}
 	await fs.rm(filePath, { force: true });
