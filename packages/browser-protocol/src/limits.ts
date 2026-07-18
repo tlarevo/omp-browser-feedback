@@ -11,18 +11,9 @@ export const BROWSER_FEEDBACK_LIMITS = {
 	maxComputedStyleCount: 80,
 	/** Max screenshot binary size, measured in UTF-8/raw bytes. */
 	maxScreenshotBytes: 10 * 1024 * 1024,
-
-	/** Max feedback event JSON container size, measured in UTF-8 bytes. */
-	maxEventBytes: 512 * 1024,
-	/**
-	 * Max multipart feedback container size, measured in UTF-8/raw bytes. Covers
-	 * the event JSON part, screenshot part, and multipart boundary/header
-	 * overhead (64 KiB slack).
-	 */
-	maxMultipartBytes: 10 * 1024 * 1024 + 512 * 1024 + 64 * 1024,
+	maxStitchedHeight: 16_384,
 } as const;
 
-<<<<<<< HEAD
 /** Marker appended to client-truncated DOM-derived fields; counts toward the cap. */
 export const BROWSER_FEEDBACK_TRUNCATION_MARKER = "…[truncated]";
 
@@ -91,8 +82,6 @@ export function capEntriesByPriority(
 	}
 	return result;
 }
-=======
 export const BATCH_FEEDBACK_LIMITS = {
 	maxItems: 20,
 } as const;
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and

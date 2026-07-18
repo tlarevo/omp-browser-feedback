@@ -52,6 +52,14 @@ export type PopupState =
 			sessions: BrowserSessionRegistration[];
 			basket?: BasketState;
 	  }
+	| {
+			kind: "capturing";
+			baseUrl: string;
+			selectedSessionId?: string;
+			sessions: BrowserSessionRegistration[];
+			current: number;
+			total: number;
+	  }
 	| { kind: "error"; message: string };
 
 export interface BasketItemState {
@@ -72,13 +80,13 @@ export interface PopupActionHandlers {
 	onPairWithCode?: (code: string) => void;
 	onSelectSession?: (sessionId: string) => void;
 	onStartPicker?: (sessionId: string, note?: string) => void;
-<<<<<<< HEAD
-	onRetry?: () => void;
-=======
 	onStartMultiPick?: (sessionId: string) => void;
 	onSubmitBatch?: () => void;
 	onRemoveBasketItem?: (itemId: string) => void;
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
+=======
+	onStartFullpageCapture?: (sessionId: string) => void;
+	onCancelCapture?: () => void;
+>>>>>>> tharinduabeydeera/tha-118-extension-full-page-capture-via-scroll-and-stitch
 }
 
 function clear(element: HTMLElement): void {
@@ -183,6 +191,10 @@ export function renderPopup(
 		appendStatus(document, root, state.message);
 		return;
 	}
+	if (state.kind === "capturing") {
+		renderCapturingState(document, root, state, handlers);
+		return;
+	}
 
 	const list = document.createElement("ul");
 	for (const session of state.sessions) {
@@ -224,11 +236,40 @@ export function renderPopup(
 		),
 		createButton(
 			document,
-			"Pick multiple",
+			"Full page",
 			activeSessionId
-				? () => handlers.onStartMultiPick?.(activeSessionId)
+				? () => handlers.onStartFullpageCapture?.(activeSessionId)
 				: undefined,
 		),
+	);
+}
+
+function renderCapturingState(
+	document: Document,
+	root: HTMLElement,
+	state: Extract<PopupState, { kind: "capturing" }>,
+	handlers: PopupActionHandlers,
+): void {
+	const list = document.createElement("ul");
+	for (const session of state.sessions) {
+		const item = document.createElement("li");
+		const label = document.createElement("label");
+		const input = document.createElement("input");
+		input.type = "radio";
+		input.name = "session";
+		input.value = session.sessionId;
+		input.checked = session.sessionId === state.selectedSessionId;
+		input.disabled = true;
+		label.append(input, document.createTextNode(renderSessionLabel(session)));
+		item.append(label);
+		list.append(item);
+	}
+	root.append(list);
+
+	appendStatus(document, root, `Capturing… ${state.current}/${state.total}`);
+
+	root.append(
+		createButton(document, "Cancel", () => handlers.onCancelCapture?.()),
 	);
 
 	const basket = state.basket;

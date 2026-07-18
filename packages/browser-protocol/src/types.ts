@@ -82,11 +82,12 @@ export interface BrowserElementContext {
 }
 
 export interface BrowserScreenshotRef {
-	kind: "full-visible-tab" | "crop";
+	kind: "full-visible-tab" | "crop" | "full-page";
 	ref: string;
 	mimeType: "image/png" | "image/jpeg";
 	width: number;
 	height: number;
+	downscaled?: boolean;
 }
 
 export interface DomSelectionFeedback {

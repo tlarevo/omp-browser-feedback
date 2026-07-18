@@ -498,3 +498,64 @@ export function activateRegionCaptureAndCapture(
 		},
 	});
 }
+
+// ── Fullpage capture utilities ─────────────────────────────────────────────
+
+const FIXED_SELECTOR =
+	'style, script, [style*="position: fixed"], [style*="position:fixed"], [style*="position: sticky"], [style*="position:sticky"]';
+
+export interface PageDimensions {
+	scrollHeight: number;
+	viewportHeight: number;
+	devicePixelRatio: number;
+	scrollY: number;
+}
+
+export function measurePageDimensions(win: Window = window): PageDimensions {
+	return {
+		scrollHeight: win.document.documentElement.scrollHeight,
+		viewportHeight: win.innerHeight,
+		devicePixelRatio: win.devicePixelRatio,
+		scrollY: win.scrollY,
+	};
+}
+
+/**
+ * Hide position:fixed and position:sticky elements to prevent them from
+ * appearing in every frame of a fullpage capture. Returns a list of
+ * { element, originalVisibility } pairs for restoration.
+ */
+export function hideFixedElements(
+	doc: Document = document,
+): Array<{ element: Element; original: string }> {
+	const elements = doc.querySelectorAll<HTMLElement>(FIXED_SELECTOR);
+	const saved: Array<{ element: Element; original: string }> = [];
+
+	for (const el of elements) {
+		const style = el.ownerDocument.defaultView?.getComputedStyle(el);
+		if (!style) continue;
+		const pos = style.position;
+		if (pos === "fixed" || pos === "sticky") {
+			saved.push({ element: el, original: el.style.visibility });
+			el.style.visibility = "hidden";
+		}
+	}
+
+	return saved;
+}
+
+export function showFixedElements(
+	saved: Array<{ element: Element; original: string }>,
+): void {
+	for (const { element, original } of saved) {
+		(element as HTMLElement).style.visibility = original;
+	}
+}
+
+export function scrollToPosition(win: Window, y: number): Promise<void> {
+	const { promise, resolve } = Promise.withResolvers<void>();
+	win.scrollTo({ top: y, behavior: "instant" });
+	// Brief yield for layout to settle
+	win.requestAnimationFrame(() => win.requestAnimationFrame(() => resolve()));
+	return promise;
+}

@@ -94,13 +94,13 @@ const elementSchema = type({
 
 const screenshotSchema = type({
 	"+": "reject",
-	kind: "'full-visible-tab' | 'crop'",
+	kind: "'full-visible-tab' | 'crop' | 'full-page'",
 	ref: nonEmptyString,
 	mimeType: "'image/png' | 'image/jpeg'",
 	width: "number",
 	height: "number",
+	"downscaled?": "boolean",
 });
-
 export const domSelectionFeedbackSchema = type({
 	"+": "reject",
 	protocolVersion: type.enumerated(BROWSER_PROTOCOL_VERSION),
