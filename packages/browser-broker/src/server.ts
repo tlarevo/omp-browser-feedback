@@ -84,70 +84,18 @@ async function readJson(request: Request): Promise<unknown> {
 	return text.length > 0 ? JSON.parse(text) : {};
 }
 
-class PayloadTooLargeError extends Error {}
-class InvalidFeedbackError extends Error {}
 
-interface ParsedFeedbackRequest {
-	event: unknown;
-	screenshotBytes?: Uint8Array;
-}
-
-/**
- * Parse a feedback request, rejecting oversized JSON/multipart containers with
- * `PayloadTooLargeError` before any parsing or persistence. Screenshots are
- * returned as raw bytes so the caller can validate fields before writing them
- * to disk.
- */
-async function parseFeedbackRequest(
+async function readFeedbackRequest(
 	request: Request,
-): Promise<ParsedFeedbackRequest> {
+	screenshots: BrowserScreenshotStore,
+): Promise<unknown> {
 	const contentType = request.headers.get("content-type") ?? "";
-
-	if (!contentType.includes("multipart/form-data")) {
-		const text = await request.text();
-		if (utf8ByteLength(text) > BROWSER_FEEDBACK_LIMITS.maxEventBytes) {
-			throw new PayloadTooLargeError("Feedback JSON exceeds byte limit");
-		}
-		try {
-			return { event: text.length > 0 ? JSON.parse(text) : {} };
-		} catch {
-			throw new InvalidFeedbackError("Malformed JSON body");
-		}
-	}
-
-	const raw = await request.arrayBuffer();
-	if (raw.byteLength > BROWSER_FEEDBACK_LIMITS.maxMultipartBytes) {
-		throw new PayloadTooLargeError("Multipart feedback exceeds byte limit");
-	}
-	const form = await new Response(raw, {
-		headers: { "content-type": contentType },
-	})
-		.formData()
-		.catch(() => {
-			throw new InvalidFeedbackError("Malformed multipart body");
-		});
+	if (!contentType.includes("multipart/form-data"))
+		return await readJson(request);
+	const form = await request.formData();
 	const eventPart = form.get("event");
 	if (typeof eventPart !== "string") {
-		throw new InvalidFeedbackError(
-			"Multipart feedback requires an event JSON part",
-		);
-	}
-	if (utf8ByteLength(eventPart) > BROWSER_FEEDBACK_LIMITS.maxEventBytes) {
-		throw new PayloadTooLargeError("Feedback JSON exceeds byte limit");
-	}
-	let event: unknown;
-	try {
-		event = JSON.parse(eventPart);
-	} catch {
-		throw new InvalidFeedbackError("Malformed event JSON part");
-	}
-	const screenshotPart = form.get("screenshot");
-	if (screenshotPart instanceof Blob) {
-		const bytes = new Uint8Array(await screenshotPart.arrayBuffer());
-		if (bytes.byteLength > BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes) {
-			throw new PayloadTooLargeError("Screenshot exceeds byte limit");
-		}
-		return { event, screenshotBytes: bytes };
+		throw new Error("Multipart feedback requires an event JSON part");
 	}
 	const parsed = JSON.parse(eventPart) as Record<string, unknown>;
 
@@ -498,44 +446,6 @@ export async function createBrowserBrokerServer(
 						{ status: 401 },
 					);
 				}
-				let parsed: ParsedFeedbackRequest;
-				try {
-					parsed = await parseFeedbackRequest(request);
-				} catch (error) {
-					if (error instanceof PayloadTooLargeError) {
-						return jsonResponse(
-							{
-								ok: false,
-								code: "payload_too_large",
-								message: error.message,
-							},
-							{ status: 413 },
-						);
-					}
-					return jsonResponse(
-						{
-							ok: false,
-							code: "invalid_feedback",
-							message:
-								error instanceof Error ? error.message : "Invalid feedback",
-						},
-						{ status: 400 },
-					);
-				}
-				const raw = parsed.event;
-				const declaredVersion = inferProtocolVersion(raw);
-				if (declaredVersion === undefined) {
-					return jsonResponse(
-						{
-							ok: false,
-							code: "invalid_feedback",
-							message: "Missing or unsupported protocolVersion",
-						},
-						{ status: 400 },
-					);
-				}
-				// Step 1: Validate the Chrome payload at its declared version.
-				const result = validateFeedbackEvent(raw, declaredVersion);
 				const raw = await readFeedbackRequest(request, screenshots);
 				const result = validateFeedbackEvent(raw);
 				if (!result.ok)

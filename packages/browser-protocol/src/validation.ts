@@ -124,8 +124,8 @@ export function checkFeedbackLimits(
 ): BrowserFeedbackLimitViolation[] {
 	const violations: BrowserFeedbackLimitViolation[] = [];
 
-	if (event.note !== undefined) {
-		const actual = codePointLength(event.note);
+	if ("note" in event && event.note !== undefined) {
+		const actual = codePointLength(event.note as string);
 		if (actual > BROWSER_FEEDBACK_LIMITS.maxNoteLength) {
 			violations.push({
 				code: "note_too_long",
