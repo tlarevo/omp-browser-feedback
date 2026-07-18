@@ -6,9 +6,11 @@ import {
 	BROWSER_PROTOCOL_VERSIONS,
 	type BrowserFeedbackEvent,
 	type BrowserProtocolVersion,
+	checkFeedbackLimits,
 	downgradeToV1,
 	inferProtocolVersion,
 	negotiateProtocolVersion,
+	utf8ByteLength,
 	validateFeedbackAck,
 	validateFeedbackEvent,
 	validateSessionRegistration,
@@ -68,36 +70,72 @@ async function readJson(request: Request): Promise<unknown> {
 	return text.length > 0 ? JSON.parse(text) : {};
 }
 
-async function readFeedbackRequest(
-	request: Request,
-	screenshots: BrowserScreenshotStore,
-): Promise<unknown> {
-	const contentType = request.headers.get("content-type") ?? "";
-	if (!contentType.includes("multipart/form-data"))
-		return await readJson(request);
+class PayloadTooLargeError extends Error {}
+class InvalidFeedbackError extends Error {}
 
-	const form = await request.formData();
+interface ParsedFeedbackRequest {
+	event: unknown;
+	screenshotBytes?: Uint8Array;
+}
+
+/**
+ * Parse a feedback request, rejecting oversized JSON/multipart containers with
+ * `PayloadTooLargeError` before any parsing or persistence. Screenshots are
+ * returned as raw bytes so the caller can validate fields before writing them
+ * to disk.
+ */
+async function parseFeedbackRequest(
+	request: Request,
+): Promise<ParsedFeedbackRequest> {
+	const contentType = request.headers.get("content-type") ?? "";
+
+	if (!contentType.includes("multipart/form-data")) {
+		const text = await request.text();
+		if (utf8ByteLength(text) > BROWSER_FEEDBACK_LIMITS.maxEventBytes) {
+			throw new PayloadTooLargeError("Feedback JSON exceeds byte limit");
+		}
+		try {
+			return { event: text.length > 0 ? JSON.parse(text) : {} };
+		} catch {
+			throw new InvalidFeedbackError("Malformed JSON body");
+		}
+	}
+
+	const raw = await request.arrayBuffer();
+	if (raw.byteLength > BROWSER_FEEDBACK_LIMITS.maxMultipartBytes) {
+		throw new PayloadTooLargeError("Multipart feedback exceeds byte limit");
+	}
+	const form = await new Response(raw, {
+		headers: { "content-type": contentType },
+	})
+		.formData()
+		.catch(() => {
+			throw new InvalidFeedbackError("Malformed multipart body");
+		});
 	const eventPart = form.get("event");
 	if (typeof eventPart !== "string") {
-		throw new Error("Multipart feedback requires an event JSON part");
+		throw new InvalidFeedbackError(
+			"Multipart feedback requires an event JSON part",
+		);
 	}
-	const event = JSON.parse(eventPart) as BrowserFeedbackEvent;
+	if (utf8ByteLength(eventPart) > BROWSER_FEEDBACK_LIMITS.maxEventBytes) {
+		throw new PayloadTooLargeError("Feedback JSON exceeds byte limit");
+	}
+	let event: unknown;
+	try {
+		event = JSON.parse(eventPart);
+	} catch {
+		throw new InvalidFeedbackError("Malformed event JSON part");
+	}
 	const screenshotPart = form.get("screenshot");
-	if (screenshotPart instanceof Blob && event.screenshot) {
-		const saved = await screenshots.save({
-			eventId: event.eventId,
-			mimeType: event.screenshot.mimeType,
-			bytes: new Uint8Array(await screenshotPart.arrayBuffer()),
-		});
-		return {
-			...event,
-			screenshot: {
-				...event.screenshot,
-				ref: saved.ref,
-			},
-		};
+	if (screenshotPart instanceof Blob) {
+		const bytes = new Uint8Array(await screenshotPart.arrayBuffer());
+		if (bytes.byteLength > BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes) {
+			throw new PayloadTooLargeError("Screenshot exceeds byte limit");
+		}
+		return { event, screenshotBytes: bytes };
 	}
-	return event;
+	return { event };
 }
 
 async function resolvePort(host: string, port: number): Promise<number> {
@@ -369,7 +407,31 @@ export async function createBrowserBrokerServer(
 						{ status: 401 },
 					);
 				}
-				const raw = await readFeedbackRequest(request, screenshots);
+				let parsed: ParsedFeedbackRequest;
+				try {
+					parsed = await parseFeedbackRequest(request);
+				} catch (error) {
+					if (error instanceof PayloadTooLargeError) {
+						return jsonResponse(
+							{
+								ok: false,
+								code: "payload_too_large",
+								message: error.message,
+							},
+							{ status: 413 },
+						);
+					}
+					return jsonResponse(
+						{
+							ok: false,
+							code: "invalid_feedback",
+							message:
+								error instanceof Error ? error.message : "Invalid feedback",
+						},
+						{ status: 400 },
+					);
+				}
+				const raw = parsed.event;
 				const declaredVersion = inferProtocolVersion(raw);
 				if (declaredVersion === undefined) {
 					return jsonResponse(
@@ -388,13 +450,24 @@ export async function createBrowserBrokerServer(
 						{ ok: false, code: "invalid_feedback", message: result.error },
 						{ status: 400 },
 					);
+				const violations = checkFeedbackLimits(result.value);
+				const violation = violations[0];
+				if (violation)
+					return jsonResponse(
+						{
+							ok: false,
+							code: violation.code,
+							path: violation.path,
+							message: `Field ${violation.path} exceeds its declared limit of ${violation.limit} ${violation.unit}`,
+							violations,
+						},
+						{ status: 422 },
+					);
 				// Step 2: Look up the target OMP session and gate delivery.
 				const session = registry.getByChannelId(result.value.channelId);
 				let wirePayload: BrowserFeedbackEvent = result.value;
 				if (session && session.negotiatedProtocolVersion < 2) {
 					// v1 OMP: attempt to produce a valid v1 wire form.
-					// Shared event types (dom.selection, page.screenshot) downgrade
-					// cleanly.  Truly v2-only payloads/fields fail here.
 					const v1Result = downgradeToV1(result.value);
 					if (!v1Result.ok) {
 						return jsonResponse(
@@ -408,15 +481,31 @@ export async function createBrowserBrokerServer(
 					}
 					wirePayload = v1Result.value;
 				}
-				// Store the original event (tracks eventId for ACK matching).
+				let event: BrowserFeedbackEvent = result.value;
+				if (parsed.screenshotBytes && event.screenshot) {
+					const saved = await screenshots.save({
+						eventId: event.eventId,
+						mimeType: event.screenshot.mimeType,
+						bytes: parsed.screenshotBytes,
+					});
+					event = {
+						...event,
+						screenshot: { ...event.screenshot, ref: saved.ref },
+					};
+					if (wirePayload.screenshot) {
+						wirePayload = {
+							...wirePayload,
+							screenshot: { ...wirePayload.screenshot, ref: saved.ref },
+						};
+					}
+				}
 				feedback.add({
-					channelId: result.value.channelId,
-					eventId: result.value.eventId,
-					createdAt: result.value.createdAt,
-					payload: result.value,
+					channelId: event.channelId,
+					eventId: event.eventId,
+					createdAt: event.createdAt,
+					payload: event,
 				});
-				if (!session)
-					return jsonResponse({ ok: true, eventId: result.value.eventId });
+				if (!session) return jsonResponse({ ok: true, eventId: event.eventId });
 				const presence = registry.presenceOf(session.sessionId);
 				// Send the wire-appropriate payload to the OMP subscriber.
 				// v1 OMP receives the validated v1-downgraded form.
@@ -426,12 +515,12 @@ export async function createBrowserBrokerServer(
 					// v1 legacy: mark-on-send (not crash-safe).
 					// v2: remains pending until ACK from OMP.
 					if (session.negotiatedProtocolVersion === 1) {
-						feedback.markDelivered(session.channelId, result.value.eventId);
+						feedback.markDelivered(session.channelId, event.eventId);
 					}
 				}
 				return jsonResponse({
 					ok: true,
-					eventId: result.value.eventId,
+					eventId: event.eventId,
 					queued: presence === "disconnected",
 					presence,
 				});

@@ -1,5 +1,7 @@
+import { BROWSER_FEEDBACK_LIMITS } from "@oh-my-pi/browser-protocol";
+
 const PADDING_CSS_PX = 40;
-const MAX_BLOB_BYTES = 3 * 1024 * 1024;
+const MAX_BLOB_BYTES = BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes;
 
 export interface CapturedScreenshot {
 	blob: Blob;

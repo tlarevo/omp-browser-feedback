@@ -12,7 +12,10 @@ import {
 	resolveBrokerPorts,
 	writeDiscoveryFile,
 } from "@oh-my-pi/browser-broker";
-import { BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
+import {
+	BROWSER_FEEDBACK_LIMITS,
+	BROWSER_PROTOCOL_VERSION,
+} from "@oh-my-pi/browser-protocol";
 import type {
 	BrowserFeedbackConnectionStatus,
 	BrowserFeedbackSubscription,
@@ -122,6 +125,7 @@ export async function ensureBrokerRunning(
 				host: DEFAULT_BROWSER_BROKER_HOST,
 				port,
 				authToken,
+				maxScreenshotBytes: BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes,
 			});
 			break;
 		} catch {

@@ -3,6 +3,7 @@ import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
 	BROWSER_BROKER_SERVICE,
+	BROWSER_FEEDBACK_LIMITS,
 	BROWSER_PROTOCOL_VERSION,
 } from "@oh-my-pi/browser-protocol";
 import { createBrowserBrokerServer } from "../src/server";
@@ -340,6 +341,7 @@ describe("browser broker server", () => {
 		expect(response.status).toBe(401);
 	});
 });
+
 function wsUrl(
 	server: { baseUrl: string },
 	sessionId: string,
@@ -508,5 +510,245 @@ describe("websocket heartbeat and reconnect", () => {
 
 		ws.close();
 		await waitForClose(ws);
+	});
+});
+// ── Payload limit enforcement ──────────────────────────────────────────────
+
+describe("payload limit enforcement", () => {
+	const AUTH = { Authorization: "Bearer secret" };
+	const VERSION = BROWSER_PROTOCOL_VERSION;
+
+	function feedbackJson(overrides: Record<string, unknown> = {}) {
+		return JSON.stringify({
+			protocolVersion: VERSION,
+			eventId: "evt_limit_1",
+			type: "dom.selection",
+			channelId: "ses_lim",
+			createdAt: "2026-07-18T00:00:00.000Z",
+			page: {
+				url: "https://example.com",
+				title: "Example",
+				viewport: { width: 1200, height: 800, devicePixelRatio: 2 },
+			},
+			element: {
+				selector: "div",
+				tagName: "DIV",
+				outerHtml: "<div>x</div>",
+				attributes: {},
+				bounds: { x: 0, y: 0, width: 10, height: 10 },
+				computedStyles: {},
+			},
+			...overrides,
+		});
+	}
+
+	async function registerTestSession(
+		server: { baseUrl: string },
+		sessionId: string,
+	) {
+		await fetch(`${server.baseUrl}/api/sessions/register`, {
+			method: "POST",
+			headers: rootJsonHeaders,
+			body: JSON.stringify({
+				protocolVersion: VERSION,
+				sessionId,
+				channelId: sessionId,
+				sessionName: "Test",
+				displayName: "Test",
+				cwd: "/repo",
+				status: "active",
+				lastActiveAt: "2026-07-18T00:00:00.000Z",
+				processId: 1,
+			}),
+		});
+	}
+
+	async function feedbackCount(
+		server: { baseUrl: string },
+		sessionId: string,
+	): Promise<number> {
+		const resp = await fetch(
+			`${server.baseUrl}/api/sessions/${sessionId}/feedback`,
+			{ headers: AUTH },
+		);
+		const body = (await resp.json()) as { feedback: unknown[] };
+		return body.feedback.length;
+	}
+
+	test("returns 413 for oversized JSON body and persists nothing", async () => {
+		const server = await createServer();
+		await registerTestSession(server, "ses_lim");
+		const bigNote = "x".repeat(600 * 1024);
+		const body = feedbackJson({ note: bigNote, channelId: "ses_lim" });
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: { ...AUTH, "Content-Type": "application/json" },
+			body,
+		});
+		expect(response.status).toBe(413);
+		const json = (await response.json()) as { code: string };
+		expect(json.code).toBe("payload_too_large");
+		expect(await feedbackCount(server, "ses_lim")).toBe(0);
+	});
+
+	test("returns 413 for oversized multipart container and persists nothing", async () => {
+		const server = await createServer();
+		await registerTestSession(server, "ses_lim");
+		const form = new FormData();
+		form.set("event", feedbackJson({ channelId: "ses_lim" }));
+		const padSize = 11 * 1024 * 1024; // > maxMultipartBytes
+		form.set(
+			"screenshot",
+			new Blob([new Uint8Array(padSize)], { type: "image/png" }),
+			"big.png",
+		);
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: AUTH,
+			body: form,
+		});
+		expect(response.status).toBe(413);
+		const json = (await response.json()) as { code: string };
+		expect(json.code).toBe("payload_too_large");
+		expect(await feedbackCount(server, "ses_lim")).toBe(0);
+	});
+
+	test("returns 413 for oversized screenshot and persists no file", async () => {
+		const screenshotDir = await fs.mkdtemp(
+			path.join("/tmp", "omp-screenshots-"),
+		);
+		dirs.push(screenshotDir);
+		const server = await createBrowserBrokerServer({
+			host: "127.0.0.1",
+			port: 0,
+			authToken: "secret",
+			screenshotRootDir: screenshotDir,
+		});
+		servers.push(server);
+		await registerTestSession(server, "ses_lim");
+		const form = new FormData();
+		form.set(
+			"event",
+			feedbackJson({
+				channelId: "ses_lim",
+				screenshot: {
+					kind: "crop",
+					ref: "pending",
+					mimeType: "image/png",
+					width: 100,
+					height: 100,
+				},
+			}),
+		);
+		const bigScreenshot = new Uint8Array(
+			BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes + 1,
+		);
+		form.set(
+			"screenshot",
+			new Blob([bigScreenshot], { type: "image/png" }),
+			"big.png",
+		);
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: AUTH,
+			body: form,
+		});
+		expect(response.status).toBe(413);
+		const json = (await response.json()) as { code: string };
+		expect(json.code).toBe("payload_too_large");
+		const files = await fs.readdir(screenshotDir);
+		expect(files).toHaveLength(0);
+		expect(await feedbackCount(server, "ses_lim")).toBe(0);
+	});
+
+	test("returns 422 for note exceeding maxNoteLength and persists nothing", async () => {
+		const server = await createServer();
+		await registerTestSession(server, "ses_lim");
+		const bigNote = "n".repeat(8_001);
+		const body = feedbackJson({ note: bigNote, channelId: "ses_lim" });
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: { ...AUTH, "Content-Type": "application/json" },
+			body,
+		});
+		expect(response.status).toBe(422);
+		const json = (await response.json()) as {
+			code: string;
+			path: string;
+			violations: Array<{ code: string; path: string }>;
+		};
+		expect(json.code).toBe("note_too_long");
+		expect(json.path).toBe("note");
+		expect(json.violations).toHaveLength(1);
+		expect(json.violations[0].code).toBe("note_too_long");
+		expect(await feedbackCount(server, "ses_lim")).toBe(0);
+	});
+
+	test("accepts note exactly at maxNoteLength", async () => {
+		const server = await createServer();
+		await registerTestSession(server, "ses_lim");
+		const note = "n".repeat(8_000);
+		const body = feedbackJson({ note, channelId: "ses_lim" });
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: { ...AUTH, "Content-Type": "application/json" },
+			body,
+		});
+		expect(response.status).toBe(200);
+		expect(await feedbackCount(server, "ses_lim")).toBe(1);
+	});
+
+	test("returns 422 for outerHtml exceeding maxOuterHtmlLength", async () => {
+		const server = await createServer();
+		await registerTestSession(server, "ses_lim");
+		const bigHtml = "<div>".repeat(4_001);
+		const body = feedbackJson({
+			channelId: "ses_lim",
+			element: {
+				selector: "div",
+				tagName: "DIV",
+				outerHtml: bigHtml,
+				attributes: {},
+				bounds: { x: 0, y: 0, width: 10, height: 10 },
+				computedStyles: {},
+			},
+		});
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: { ...AUTH, "Content-Type": "application/json" },
+			body,
+		});
+		expect(response.status).toBe(422);
+		const json = (await response.json()) as { code: string; path: string };
+		expect(json.code).toBe("outer_html_too_long");
+		expect(json.path).toBe("element.outerHtml");
+		expect(await feedbackCount(server, "ses_lim")).toBe(0);
+	});
+
+	test("returns 422 for attribute count exceeding maxAttributeCount", async () => {
+		const server = await createServer();
+		await registerTestSession(server, "ses_lim");
+		const attrs: Record<string, string> = {};
+		for (let i = 0; i < 81; i++) attrs[`a${i}`] = "v";
+		const body = feedbackJson({
+			channelId: "ses_lim",
+			element: {
+				selector: "div",
+				tagName: "DIV",
+				outerHtml: "<div>x</div>",
+				attributes: attrs,
+				bounds: { x: 0, y: 0, width: 10, height: 10 },
+				computedStyles: {},
+			},
+		});
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: { ...AUTH, "Content-Type": "application/json" },
+			body,
+		});
+		expect(response.status).toBe(422);
+		const json = (await response.json()) as { code: string };
+		expect(json.code).toBe("attribute_count_exceeded");
+		expect(await feedbackCount(server, "ses_lim")).toBe(0);
 	});
 });

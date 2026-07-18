@@ -1,4 +1,9 @@
-import type { BrowserSessionRegistration } from "@oh-my-pi/browser-protocol";
+import {
+	DEFAULT_BROWSER_BROKER_PORT_RANGE,
+	parsePortRange,
+	portsInRange,
+	type BrowserSessionRegistration,
+} from "@oh-my-pi/browser-protocol";
 import { listSessions, redeemPairingCode } from "../background";
 import {
 	ensureBrowserInstallId,
@@ -70,7 +75,7 @@ async function sendToBackground<T>(
 	});
 }
 
-const DEFAULT_PORTS: number[] = Array.from({ length: 21 }, (_, i) => 4317 + i);
+const DEFAULT_PORTS: number[] = portsInRange(parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE));
 
 function isUnauthorizedError(errorMessage: string | undefined): boolean {
 	return Boolean(
