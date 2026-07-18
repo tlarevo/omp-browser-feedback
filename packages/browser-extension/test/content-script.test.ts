@@ -1,10 +1,20 @@
 import { describe, expect, test } from "bun:test";
-import { BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
-import { parseHTML } from "linkedom";
+import {
+	BROWSER_PROTOCOL_VERSION,
+	type BrowserFeedbackEvent,
+} from "@oh-my-pi/browser-protocol";
+import { Event as LinkedomEvent, parseHTML } from "linkedom";
 import {
 	activatePickerAndCapture,
 	buildDomSelectionFeedback,
 } from "../src/content-script";
+
+/** Build a linkedom Event with a `key` property for Escape simulation. */
+function keyDown(key: string): Event {
+	const e = new LinkedomEvent("keydown", { bubbles: true });
+	(e as unknown as Record<string, unknown>).key = key;
+	return e as unknown as Event;
+}
 
 describe("buildDomSelectionFeedback", () => {
 	test("captures page, selector, attributes, bounds, and note", () => {
@@ -83,7 +93,7 @@ describe("activatePickerAndCapture", () => {
 			document,
 			{ channelId: "ses_1" },
 			{
-				onPick: (event: any) => {
+				onPick: (event: BrowserFeedbackEvent) => {
 					result = event;
 				},
 				onExit: () => {},
@@ -103,5 +113,54 @@ describe("activatePickerAndCapture", () => {
 		);
 		expect(document.querySelector("[data-omp-picker-overlay]")).not.toBeNull();
 		handle.deactivate();
+	});
+});
+
+describe("activatePickerAndCapture — stay-active mode", () => {
+	test("stay-active picker fires onPick without calling onExit", () => {
+		const { document, window: linkedomWindow } = parseHTML(
+			"<!doctype html><body><button id='btn'>OK</button></body>",
+		);
+		const picks: BrowserFeedbackEvent[] = [];
+		const exits: number[] = [];
+
+		activatePickerAndCapture(
+			document,
+			{ channelId: "ses_1", stayActive: true, window: linkedomWindow },
+			{
+				onPick: (event: BrowserFeedbackEvent) => picks.push(event),
+				onExit: () => exits.push(1),
+			},
+		);
+
+		// Hover and click
+		const btn = document.querySelector("button") as Element;
+		btn.dispatchEvent(
+			new LinkedomEvent("mouseover", { bubbles: true }) as unknown as Event,
+		);
+		document.dispatchEvent(
+			new LinkedomEvent("click", { bubbles: true }) as unknown as Event,
+		);
+		expect(picks).toHaveLength(1);
+		expect(exits).toHaveLength(0);
+
+		// Escape to exit
+		document.dispatchEvent(keyDown("Escape"));
+		document.dispatchEvent(keyDown("Escape"));
+		expect(exits).toHaveLength(1);
+	});
+
+	test("deactivate removes all picker DOM elements", () => {
+		const { document } = parseHTML("<!doctype html><body></body>");
+		const handle = activatePickerAndCapture(
+			document,
+			{ channelId: "ses_1", stayActive: true },
+			{ onPick: () => {}, onExit: () => {} },
+		);
+		expect(document.querySelector("[data-omp-picker-overlay]")).not.toBeNull();
+		expect(document.querySelector("[data-omp-picker-chip]")).not.toBeNull();
+		handle.deactivate();
+		expect(document.querySelector("[data-omp-picker-overlay]")).toBeNull();
+		expect(document.querySelector("[data-omp-picker-chip]")).toBeNull();
 	});
 });

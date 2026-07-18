@@ -41,7 +41,10 @@ function createOverlayElement(document: Document): HTMLElement {
 	return overlay;
 }
 
-function createChipElement(document: Document, stayActive: boolean): HTMLElement {
+function createChipElement(
+	document: Document,
+	stayActive: boolean,
+): HTMLElement {
 	const chip = document.createElement("div");
 	chip.setAttribute("data-omp-picker-chip", "true");
 	chip.textContent = stayActive

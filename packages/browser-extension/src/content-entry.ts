@@ -1,11 +1,18 @@
 import { activatePickerAndCapture, type PickerHandle } from "./content-script";
 
 let activePickerHandle: PickerHandle | undefined;
+let pendingPickerResponse: ((response: unknown) => void) | undefined;
 
 function deactivateActivePicker(): boolean {
 	if (!activePickerHandle) return false;
 	activePickerHandle.deactivate();
 	activePickerHandle = undefined;
+	// Resolve any pending sendResponse from omp:activate-picker so the popup
+	// doesn't hang when a programmatic toggle cancels an in-flight pick.
+	if (pendingPickerResponse) {
+		pendingPickerResponse({ ok: false, error: "Picker deactivated" });
+		pendingPickerResponse = undefined;
+	}
 	return true;
 }
 
@@ -27,6 +34,7 @@ chrome.runtime.onMessage.addListener(
 			// Single-pick popup flow: cancel any existing picker, then arm once.
 			deactivateActivePicker();
 			let picked = false;
+			pendingPickerResponse = sendResponse;
 			activePickerHandle = activatePickerAndCapture(
 				document,
 				{ channelId, note },
@@ -37,6 +45,7 @@ chrome.runtime.onMessage.addListener(
 					},
 					onExit() {
 						activePickerHandle = undefined;
+						pendingPickerResponse = undefined;
 						sendResponse(
 							picked ? { ok: true } : { ok: false, error: "Picker cancelled" },
 						);

@@ -166,7 +166,9 @@ async function signalUnavailable(title: string): Promise<void> {
 async function handleTogglePickerCommand(): Promise<void> {
 	const brokerResult = await handleDiscoverBroker();
 	const baseUrl =
-		brokerResult.ok && brokerResult.data ? brokerResult.data.baseUrl : undefined;
+		brokerResult.ok && brokerResult.data
+			? brokerResult.data.baseUrl
+			: undefined;
 	if (!baseUrl) {
 		await openPopupWithHint(
 			"No OMP broker found. Start a session, then try the shortcut again.",
