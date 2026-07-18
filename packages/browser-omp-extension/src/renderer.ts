@@ -48,48 +48,71 @@ function renderRecord(record: Record<string, string>): string {
 	return JSON.stringify(Object.fromEntries(entries.slice(0, 40)), null, 2);
 }
 
+function renderAccessibility(
+	accessibility: DomSelectionFeedback["element"]["accessibility"],
+): string {
+	if (!accessibility) return "";
+	const parts: string[] = [];
+	if (accessibility.role) parts.push(accessibility.role);
+	if (accessibility.name) parts.push(`"${accessibility.name}"`);
+	if (accessibility.description) parts.push(`(${accessibility.description})`);
+	if (parts.length === 0) return "";
+	return `- Accessible: ${parts.join(" ")}`;
+}
+
 function renderDomSelection(event: DomSelectionFeedback): string {
 	const screenshot = event.screenshot
 		? `- Local reference: ${event.screenshot.ref}`
 		: "- None";
-	const accessibility = event.element.accessibility
-		? JSON.stringify(event.element.accessibility, null, 2)
-		: "{}";
 
-	return `The user selected a browser element and provided implementation feedback.
+	const lines = [
+		`The user selected a browser element and provided implementation feedback.`,
+		"",
+		`Feedback`,
+		`- Event ID: ${event.eventId}`,
+		`- Created at: ${event.createdAt}`,
+		"",
+		`Page`,
+		`- URL: ${event.page.url}`,
+		`- Title: ${event.page.title}`,
+		`- Viewport: ${event.page.viewport.width}x${event.page.viewport.height}`,
+		"",
+		`Selected element`,
+		`- Selector: ${event.element.selector}`,
+	];
 
-Feedback
-- Event ID: ${event.eventId}
-- Created at: ${event.createdAt}
+	if (event.element.xpath) {
+		lines.push(`- XPath: ${event.element.xpath}`);
+	}
 
-Page
-- URL: ${event.page.url}
-- Title: ${event.page.title}
-- Viewport: ${event.page.viewport.width}x${event.page.viewport.height}
+	lines.push(`- Tag: ${event.element.tagName}`);
 
-Selected element
-- Selector: ${event.element.selector}
-- XPath: ${event.element.xpath ?? ""}
-- Tag: ${event.element.tagName}
-- Text: ${truncate(event.element.text, MAX_TEXT)}
-- Bounds: ${event.element.bounds.x}, ${event.element.bounds.y}, ${event.element.bounds.width}, ${event.element.bounds.height}
+	const a11y = renderAccessibility(event.element.accessibility);
+	if (a11y) lines.push(a11y);
 
-HTML
-${truncate(event.element.outerHtml, MAX_HTML)}
+	if (event.element.text) {
+		lines.push(`- Text: ${truncate(event.element.text, MAX_TEXT)}`);
+	}
 
-Relevant computed styles
-${renderRecord(event.element.computedStyles)}
+	lines.push(
+		`- Bounds: ${event.element.bounds.x}, ${event.element.bounds.y}, ${event.element.bounds.width}, ${event.element.bounds.height}`,
+		"",
+		`HTML`,
+		truncate(event.element.outerHtml, MAX_HTML),
+		"",
+		`Relevant computed styles`,
+		renderRecord(event.element.computedStyles),
+		"",
+		`Screenshot`,
+		screenshot,
+		"",
+		`User note`,
+		truncate(event.note, MAX_TEXT),
+		"",
+		`Locate the owning source/component in the current project and address the user's request. Treat selector and HTML data as runtime evidence; verify the source implementation before editing.`,
+	);
 
-Accessibility
-${accessibility}
-
-Screenshot
-${screenshot}
-
-User note
-${truncate(event.note, MAX_TEXT)}
-
-Locate the owning source/component in the current project and address the user's request. Treat selector and HTML data as runtime evidence; verify the source implementation before editing.`;
+	return lines.join("\n");
 }
 
 export function renderBrowserFeedbackContext(
