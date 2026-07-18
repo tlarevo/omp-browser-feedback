@@ -151,32 +151,40 @@ export function buildDomSelectionFeedback(
 export interface PickerCaptureInput {
 	channelId: string;
 	note?: string;
+	stayActive?: boolean;
 	window?: Window;
 }
 
-export type PickerCaptureCallback = (
-	event: BrowserFeedbackEvent | null,
-) => void;
+export interface PickerCaptureCallbacks {
+	/** Fired once per committed pick. In stay-active mode this fires repeatedly. */
+	onPick: (event: BrowserFeedbackEvent) => void;
+	/** Fired once when the picker exits on its own (Escape / single-pick done). */
+	onExit: () => void;
+}
 
 export function activatePickerAndCapture(
 	document: Document,
 	input: PickerCaptureInput,
-	callback: PickerCaptureCallback,
+	callbacks: PickerCaptureCallbacks,
 ): PickerHandle {
-	return activatePicker(document, {
-		onSelect(element) {
-			const win = input.window ?? window;
-			callback(
-				buildDomSelectionFeedback({
-					channelId: input.channelId,
-					element,
-					note: input.note,
-					window: win,
-				}),
-			);
+	return activatePicker(
+		document,
+		{
+			onSelect(element) {
+				const win = input.window ?? window;
+				callbacks.onPick(
+					buildDomSelectionFeedback({
+						channelId: input.channelId,
+						element,
+						note: input.note,
+						window: win,
+					}),
+				);
+			},
+			onExit() {
+				callbacks.onExit();
+			},
 		},
-		onCancel() {
-			callback(null);
-		},
-	});
+		{ stayActive: input.stayActive },
+	);
 }

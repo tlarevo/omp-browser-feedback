@@ -40,6 +40,7 @@ export async function ensureBrowserInstallId(): Promise<string> {
 
 export type PopupState =
 	| { kind: "loading" }
+	| { kind: "hint"; message: string }
 	| { kind: "no-broker"; attemptedPorts: number[] }
 	| { kind: "unpaired"; baseUrl: string }
 	| { kind: "pairing-error"; baseUrl: string; message: string }
@@ -109,6 +110,11 @@ export function renderPopup(
 
 	if (state.kind === "loading") {
 		appendStatus(document, root, "Connecting to broker\u2026");
+		return;
+	}
+
+	if (state.kind === "hint") {
+		appendStatus(document, root, state.message);
 		return;
 	}
 

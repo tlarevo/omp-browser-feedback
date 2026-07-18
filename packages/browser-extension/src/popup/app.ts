@@ -90,8 +90,16 @@ async function initPopup(): Promise<void> {
 	if (!(root instanceof HTMLElement)) return;
 	const appRoot = root;
 
+	let consumedHint: string | undefined;
 	function render(state: PopupState): void {
 		renderPopup(appRoot, state, handlers);
+		if (consumedHint) {
+			const banner = appRoot.ownerDocument.createElement("p");
+			banner.textContent = consumedHint;
+			banner.style.cssText =
+				"margin:0 0 8px;padding:6px 8px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;font-size:13px;";
+			appRoot.prepend(banner);
+		}
 	}
 
 	let currentBaseUrl = "";
@@ -168,6 +176,17 @@ async function initPopup(): Promise<void> {
 			await refreshFromBroker();
 		},
 	};
+	// If background wrote a pickerHint (e.g. shortcut fired with no session),
+	// consume it and clear the key so subsequent opens are clean. The banner
+	// is re-prepended on every render() call since renderPopup clears root.
+	const hintKey = "pickerHint";
+	const hintRaw = await chrome.storage.local.get([hintKey]);
+	const hintMessage =
+		typeof hintRaw[hintKey] === "string" ? hintRaw[hintKey] : undefined;
+	if (hintMessage) {
+		await chrome.storage.local.remove([hintKey]);
+		consumedHint = hintMessage;
+	}
 
 	async function refreshFromBroker(): Promise<void> {
 		const brokerResult = await sendToBackground<DiscoverBrokerResponse>({
