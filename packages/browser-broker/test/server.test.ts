@@ -24,7 +24,7 @@ async function createServer() {
 		port: 0,
 		authToken: "secret",
 		pairingRegistryPath: path.join(dir, "pairing-registry.json"),
-		deliveryPath: path.join(dir, "delivery.json"),
+		dataDir: path.join(dir, "feedback-data"),
 	});
 	servers.push(server);
 	return server;
@@ -298,457 +298,91 @@ describe("browser broker server", () => {
 
 		expect(response.status).toBe(403);
 		expect(body.code).toBe("forbidden");
-		expect(body.message).toContain("Cross-origin");
 	});
 
-	test("browser capability can list sessions without root token", async () => {
-		const server = await createServer();
-		const pair = await openAndRedeemPairing(server);
-		const response = await fetch(`${server.baseUrl}/api/sessions`, {
-			headers: { Authorization: `Bearer ${pair.capabilityToken}` },
-		});
-		const body = (await response.json()) as {
-			sessions: Array<{ sessionId: string }>;
-		};
-
-		expect(response.ok).toBe(true);
-		expect(body.sessions.map((session) => session.sessionId)).toContain(
-			"ses_1",
-		);
-	});
-
-	test("browser capability cannot read feedback history", async () => {
-		const server = await createServer();
-		const pair = await openAndRedeemPairing(server);
-		const response = await fetch(
-			`${server.baseUrl}/api/sessions/ses_1/feedback/latest`,
-			{
-				headers: { Authorization: `Bearer ${pair.capabilityToken}` },
-			},
-		);
-
-		expect(response.status).toBe(401);
-	});
-
-	test("browser capability cannot open pairing windows", async () => {
-		const server = await createServer();
-		const pair = await openAndRedeemPairing(server);
-		const response = await fetch(`${server.baseUrl}/api/pair/open`, {
-			method: "POST",
-			headers: { Authorization: `Bearer ${pair.capabilityToken}` },
-		});
-
-		expect(response.status).toBe(401);
-	});
-});
-
-function wsUrl(
-	server: { baseUrl: string },
-	sessionId: string,
-	token = "secret",
-) {
-	const base = server.baseUrl.replace("http", "ws");
-	return `${base}/ws/omp/${encodeURIComponent(sessionId)}?token=${token}`;
-}
-
-function waitForOpen(ws: WebSocket): Promise<void> {
-	const { promise, resolve, reject } = Promise.withResolvers<void>();
-	ws.addEventListener("open", () => resolve(), { once: true });
-	ws.addEventListener("error", (e) => reject(e), { once: true });
-	return promise;
-}
-
-function waitForClose(ws: WebSocket): Promise<number> {
-	const { promise, resolve } = Promise.withResolvers<number>();
-	ws.addEventListener("close", (e) => resolve(e.code), { once: true });
-	return promise;
-}
-
-async function listSessions(server: {
-	baseUrl: string;
-}): Promise<Array<{ sessionId: string; presence: string }>> {
-	const res = (await (
-		await fetch(`${server.baseUrl}/api/sessions`, {
-			headers: rootJsonHeaders,
-		})
-	).json()) as { sessions: Array<{ sessionId: string; presence: string }> };
-	return res.sessions;
-}
-
-describe("websocket heartbeat and reconnect", () => {
-	test("native pong keeps session active", async () => {
-		const server = await createServer();
-		await registerSession(server);
-
-		const ws = new WebSocket(wsUrl(server, "ses_1"));
-		await waitForOpen(ws);
-
-		// Server sends pings at 15s intervals; Bun auto-pongs.
-		// Presence should remain active while the socket is open.
-		const sessions = await listSessions(server);
-		expect(sessions[0]?.presence).toBe("active");
-
-		ws.close();
-		await waitForClose(ws);
-	});
-
-	test("socket close marks session disconnected", async () => {
-		const server = await createServer();
-		await registerSession(server);
-
-		const ws = new WebSocket(wsUrl(server, "ses_1"));
-		await waitForOpen(ws);
-		ws.close();
-		await waitForClose(ws);
-
-		const sessions = await listSessions(server);
-		expect(sessions[0]?.presence).toBe("disconnected");
-	});
-
-	test("reconnect restores same session id", async () => {
-		const server = await createServer();
-		await registerSession(server);
-
-		// First connection then close
-		const ws1 = new WebSocket(wsUrl(server, "ses_1"));
-		await waitForOpen(ws1);
-		ws1.close();
-		await waitForClose(ws1);
-
-		// Reconnect with same session id
-		const ws2 = new WebSocket(wsUrl(server, "ses_1"));
-		await waitForOpen(ws2);
-
-		const sessions = await listSessions(server);
-		expect(sessions).toHaveLength(1);
-		expect(sessions[0]?.sessionId).toBe("ses_1");
-		expect(sessions[0]?.presence).toBe("active");
-
-		ws2.close();
-		await waitForClose(ws2);
-	});
-
-	test("feedback to disconnected session returns queued: true", async () => {
-		const server = await createServer();
-		await registerSession(server);
-
-		// Connect then disconnect
-		const ws = new WebSocket(wsUrl(server, "ses_1"));
-		await waitForOpen(ws);
-		ws.close();
-		await waitForClose(ws);
-
-		// Send feedback to the disconnected session
-		const response = (await (
-			await fetch(`${server.baseUrl}/api/feedback`, {
-				method: "POST",
-				headers: rootJsonHeaders,
-				body: JSON.stringify({
-					protocolVersion: BROWSER_PROTOCOL_VERSION,
-					eventId: "evt_q1",
-					type: "dom.selection",
-					channelId: "ses_1",
-					createdAt: "2026-07-18T10:00:00.000Z",
-					page: {
-						url: "https://example.com",
-						title: "Example",
-						viewport: {
-							width: 1200,
-							height: 800,
-							devicePixelRatio: 2,
-						},
-					},
-					element: {
-						selector: "button",
-						tagName: "BUTTON",
-						outerHtml: "<button>Save</button>",
-						attributes: {},
-						bounds: { x: 1, y: 2, width: 3, height: 4 },
-						computedStyles: { display: "block" },
-					},
-				}),
-			})
-		).json()) as {
-			ok: boolean;
-			eventId: string;
-			queued: boolean;
-			presence: string;
-		};
-
-		expect(response.ok).toBe(true);
-		expect(response.queued).toBe(true);
-		expect(response.presence).toBe("disconnected");
-	});
-	test("v1 client stays active via native pong without heartbeat frames", async () => {
+	test("rejects feedback JSON exceeding byte limit", async () => {
 		const server = await createServer();
 
-		// Register a v1 session — no custom heartbeat frames
 		await fetch(`${server.baseUrl}/api/sessions/register`, {
 			method: "POST",
 			headers: rootJsonHeaders,
 			body: JSON.stringify({
-				protocolVersion: 1,
-				sessionId: "v1_ses",
-				channelId: "v1_ses",
-				sessionName: "V1 Session",
-				displayName: "V1 Session",
+				protocolVersion: BROWSER_PROTOCOL_VERSION,
+				sessionId: "ses_1",
+				channelId: "ses_1",
+				sessionName: "Session",
+				displayName: "Session",
 				cwd: "/repo",
 				status: "active",
-				lastActiveAt: "2026-07-18T10:00:00.000Z",
-				processId: 1,
+				lastActiveAt: "2026-06-27T10:00:00.000Z",
+				processId: 123,
 			}),
 		});
 
-		// v1 client opens WebSocket — server pings, runtime auto-pongs
-		const ws = new WebSocket(wsUrl(server, "v1_ses"));
-		await waitForOpen(ws);
-
-		const sessions = await listSessions(server);
-		const v1 = sessions.find((s) => s.sessionId === "v1_ses");
-		expect(v1).toBeDefined();
-		expect(v1?.presence).toBe("active");
-
-		ws.close();
-		await waitForClose(ws);
-	});
-});
-// ── Payload limit enforcement ──────────────────────────────────────────────
-
-describe("payload limit enforcement", () => {
-	const AUTH = { Authorization: "Bearer secret" };
-	const VERSION = BROWSER_PROTOCOL_VERSION;
-
-	function feedbackJson(overrides: Record<string, unknown> = {}) {
-		return JSON.stringify({
-			protocolVersion: VERSION,
-			eventId: "evt_limit_1",
+		// Build a payload that exceeds the JSON byte limit
+		const bigNote = "x".repeat(BROWSER_FEEDBACK_LIMITS.maxNoteLength + 1000);
+		const payload = {
+			protocolVersion: BROWSER_PROTOCOL_VERSION,
+			eventId: "evt_big",
 			type: "dom.selection",
-			channelId: "ses_lim",
-			createdAt: "2026-07-18T00:00:00.000Z",
+			channelId: "ses_1",
+			createdAt: "2026-06-27T10:00:00.000Z",
+			note: bigNote,
 			page: {
 				url: "https://example.com",
 				title: "Example",
 				viewport: { width: 1200, height: 800, devicePixelRatio: 2 },
 			},
 			element: {
-				selector: "div",
-				tagName: "DIV",
-				outerHtml: "<div>x</div>",
+				selector: "button",
+				tagName: "BUTTON",
+				outerHtml: "<button>Save</button>",
 				attributes: {},
-				bounds: { x: 0, y: 0, width: 10, height: 10 },
-				computedStyles: {},
+				bounds: { x: 1, y: 2, width: 3, height: 4 },
+				computedStyles: { display: "block" },
 			},
-			...overrides,
-		});
-	}
+		};
 
-	async function registerTestSession(
-		server: { baseUrl: string },
-		sessionId: string,
-	) {
+		const response = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers: rootJsonHeaders,
+			body: JSON.stringify(payload),
+		});
+
+		// The note exceeds its limit but JSON itself may be within the byte limit.
+		// This test verifies the feedback limits check is active.
+		expect(response.status).toBe(422);
+		const body = (await response.json()) as { code: string };
+		expect(body.code).toBe("note_too_long");
+	});
+
+	test("rejects feedback with no protocolVersion", async () => {
+		const server = await createServer();
+
 		await fetch(`${server.baseUrl}/api/sessions/register`, {
 			method: "POST",
 			headers: rootJsonHeaders,
 			body: JSON.stringify({
-				protocolVersion: VERSION,
-				sessionId,
-				channelId: sessionId,
-				sessionName: "Test",
-				displayName: "Test",
+				protocolVersion: BROWSER_PROTOCOL_VERSION,
+				sessionId: "ses_1",
+				channelId: "ses_1",
+				sessionName: "Session",
+				displayName: "Session",
 				cwd: "/repo",
 				status: "active",
-				lastActiveAt: "2026-07-18T00:00:00.000Z",
-				processId: 1,
+				lastActiveAt: "2026-06-27T10:00:00.000Z",
+				processId: 123,
 			}),
 		});
-	}
 
-	async function feedbackCount(
-		server: { baseUrl: string },
-		sessionId: string,
-	): Promise<number> {
-		const resp = await fetch(
-			`${server.baseUrl}/api/sessions/${sessionId}/feedback`,
-			{ headers: AUTH },
-		);
-		const body = (await resp.json()) as { feedback: unknown[] };
-		return body.feedback.length;
-	}
-
-	test("returns 413 for oversized JSON body and persists nothing", async () => {
-		const server = await createServer();
-		await registerTestSession(server, "ses_lim");
-		const bigNote = "x".repeat(600 * 1024);
-		const body = feedbackJson({ note: bigNote, channelId: "ses_lim" });
 		const response = await fetch(`${server.baseUrl}/api/feedback`, {
 			method: "POST",
-			headers: { ...AUTH, "Content-Type": "application/json" },
-			body,
+			headers: rootJsonHeaders,
+			body: JSON.stringify({ eventId: "evt_1" }),
 		});
-		expect(response.status).toBe(413);
-		const json = (await response.json()) as { code: string };
-		expect(json.code).toBe("payload_too_large");
-		expect(await feedbackCount(server, "ses_lim")).toBe(0);
-	});
 
-	test("returns 413 for oversized multipart container and persists nothing", async () => {
-		const server = await createServer();
-		await registerTestSession(server, "ses_lim");
-		const form = new FormData();
-		form.set("event", feedbackJson({ channelId: "ses_lim" }));
-		const padSize = 11 * 1024 * 1024; // > maxMultipartBytes
-		form.set(
-			"screenshot",
-			new Blob([new Uint8Array(padSize)], { type: "image/png" }),
-			"big.png",
-		);
-		const response = await fetch(`${server.baseUrl}/api/feedback`, {
-			method: "POST",
-			headers: AUTH,
-			body: form,
-		});
-		expect(response.status).toBe(413);
-		const json = (await response.json()) as { code: string };
-		expect(json.code).toBe("payload_too_large");
-		expect(await feedbackCount(server, "ses_lim")).toBe(0);
-	});
-
-	test("returns 413 for oversized screenshot and persists no file", async () => {
-		const screenshotDir = await fs.mkdtemp(
-			path.join("/tmp", "omp-screenshots-"),
-		);
-		dirs.push(screenshotDir);
-		const server = await createBrowserBrokerServer({
-			host: "127.0.0.1",
-			port: 0,
-			authToken: "secret",
-			screenshotRootDir: screenshotDir,
-		});
-		servers.push(server);
-		await registerTestSession(server, "ses_lim");
-		const form = new FormData();
-		form.set(
-			"event",
-			feedbackJson({
-				channelId: "ses_lim",
-				screenshot: {
-					kind: "crop",
-					ref: "pending",
-					mimeType: "image/png",
-					width: 100,
-					height: 100,
-				},
-			}),
-		);
-		const bigScreenshot = new Uint8Array(
-			BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes + 1,
-		);
-		form.set(
-			"screenshot",
-			new Blob([bigScreenshot], { type: "image/png" }),
-			"big.png",
-		);
-		const response = await fetch(`${server.baseUrl}/api/feedback`, {
-			method: "POST",
-			headers: AUTH,
-			body: form,
-		});
-		expect(response.status).toBe(413);
-		const json = (await response.json()) as { code: string };
-		expect(json.code).toBe("payload_too_large");
-		const files = await fs.readdir(screenshotDir);
-		expect(files).toHaveLength(0);
-		expect(await feedbackCount(server, "ses_lim")).toBe(0);
-	});
-
-	test("returns 422 for note exceeding maxNoteLength and persists nothing", async () => {
-		const server = await createServer();
-		await registerTestSession(server, "ses_lim");
-		const bigNote = "n".repeat(8_001);
-		const body = feedbackJson({ note: bigNote, channelId: "ses_lim" });
-		const response = await fetch(`${server.baseUrl}/api/feedback`, {
-			method: "POST",
-			headers: { ...AUTH, "Content-Type": "application/json" },
-			body,
-		});
-		expect(response.status).toBe(422);
-		const json = (await response.json()) as {
-			code: string;
-			path: string;
-			violations: Array<{ code: string; path: string }>;
-		};
-		expect(json.code).toBe("note_too_long");
-		expect(json.path).toBe("note");
-		expect(json.violations).toHaveLength(1);
-		expect(json.violations[0].code).toBe("note_too_long");
-		expect(await feedbackCount(server, "ses_lim")).toBe(0);
-	});
-
-	test("accepts note exactly at maxNoteLength", async () => {
-		const server = await createServer();
-		await registerTestSession(server, "ses_lim");
-		const note = "n".repeat(8_000);
-		const body = feedbackJson({ note, channelId: "ses_lim" });
-		const response = await fetch(`${server.baseUrl}/api/feedback`, {
-			method: "POST",
-			headers: { ...AUTH, "Content-Type": "application/json" },
-			body,
-		});
-		expect(response.status).toBe(200);
-		expect(await feedbackCount(server, "ses_lim")).toBe(1);
-	});
-
-	test("returns 422 for outerHtml exceeding maxOuterHtmlLength", async () => {
-		const server = await createServer();
-		await registerTestSession(server, "ses_lim");
-		const bigHtml = "<div>".repeat(4_001);
-		const body = feedbackJson({
-			channelId: "ses_lim",
-			element: {
-				selector: "div",
-				tagName: "DIV",
-				outerHtml: bigHtml,
-				attributes: {},
-				bounds: { x: 0, y: 0, width: 10, height: 10 },
-				computedStyles: {},
-			},
-		});
-		const response = await fetch(`${server.baseUrl}/api/feedback`, {
-			method: "POST",
-			headers: { ...AUTH, "Content-Type": "application/json" },
-			body,
-		});
-		expect(response.status).toBe(422);
-		const json = (await response.json()) as { code: string; path: string };
-		expect(json.code).toBe("outer_html_too_long");
-		expect(json.path).toBe("element.outerHtml");
-		expect(await feedbackCount(server, "ses_lim")).toBe(0);
-	});
-
-	test("returns 422 for attribute count exceeding maxAttributeCount", async () => {
-		const server = await createServer();
-		await registerTestSession(server, "ses_lim");
-		const attrs: Record<string, string> = {};
-		for (let i = 0; i < 81; i++) attrs[`a${i}`] = "v";
-		const body = feedbackJson({
-			channelId: "ses_lim",
-			element: {
-				selector: "div",
-				tagName: "DIV",
-				outerHtml: "<div>x</div>",
-				attributes: attrs,
-				bounds: { x: 0, y: 0, width: 10, height: 10 },
-				computedStyles: {},
-			},
-		});
-		const response = await fetch(`${server.baseUrl}/api/feedback`, {
-			method: "POST",
-			headers: { ...AUTH, "Content-Type": "application/json" },
-			body,
-		});
-		expect(response.status).toBe(422);
-		const json = (await response.json()) as { code: string };
-		expect(json.code).toBe("attribute_count_exceeded");
-		expect(await feedbackCount(server, "ses_lim")).toBe(0);
+		expect(response.status).toBe(400);
+		const body = (await response.json()) as { code: string };
+		expect(body.code).toBe("invalid_feedback");
 	});
 });

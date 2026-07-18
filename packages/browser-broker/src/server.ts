@@ -17,8 +17,9 @@ import {
 } from "@oh-my-pi/browser-protocol";
 import type { Server } from "bun";
 import { isAuthorizedBrowserRequest, isAuthorizedRequest } from "./auth";
-import { defaultDeliveryPath, defaultPairingRegistryPath } from "./discovery";
+import { defaultFeedbackDataDir, defaultPairingRegistryPath } from "./discovery";
 import { InMemoryFeedbackStore } from "./feedback-store";
+import { JournalStore } from "./journal";
 import { createPairingStore } from "./pairing-store";
 import { BrowserScreenshotStore } from "./screenshots";
 import { BrowserSessionRegistry } from "./session-registry";
@@ -35,8 +36,8 @@ export interface BrowserBrokerServerOptions {
 	pairingRegistryPath?: string;
 	screenshotRootDir?: string;
 	maxScreenshotBytes?: number;
-	/** Path for durable pending-event persistence. */
-	deliveryPath?: string;
+	/** Directory for journal persistence and screenshot storage. */
+	dataDir?: string;
 	heartbeatIntervalMs?: number;
 	heartbeatTimeoutMs?: number;
 	idleAfterMs?: number;
@@ -181,12 +182,20 @@ export async function createBrowserBrokerServer(
 			: {}),
 		...(options.graceMs !== undefined ? { graceMs: options.graceMs } : {}),
 	});
+	const dataDir = options.dataDir ?? defaultFeedbackDataDir();
+	const journal = new JournalStore(dataDir, {
+		maxEventsPerChannel: options.maxEventsPerChannel ?? 200,
+		maxTotalBytes: 50 * 1024 * 1024,
+		maxAgeMs: 7 * 24 * 60 * 60 * 1000,
+	});
+	journal.load();
+	const screenshotDir = options.screenshotRootDir ?? `${dataDir}/screenshots`;
 	const feedback = new InMemoryFeedbackStore({
-		maxEventsPerChannel: options.maxEventsPerChannel ?? 50,
-		deliveryPath: options.deliveryPath ?? defaultDeliveryPath(),
+		journal,
+		screenshotRootDir: screenshotDir,
 	});
 	const screenshots = new BrowserScreenshotStore({
-		rootDir: options.screenshotRootDir ?? "/tmp/omp-browser-screenshots",
+		rootDir: screenshotDir,
 		maxBytes:
 			options.maxScreenshotBytes ?? BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes,
 	});
@@ -468,6 +477,8 @@ export async function createBrowserBrokerServer(
 				let wirePayload: BrowserFeedbackEvent = result.value;
 				if (session && session.negotiatedProtocolVersion < 2) {
 					// v1 OMP: attempt to produce a valid v1 wire form.
+					// Shared event types (dom.selection, page.screenshot) downgrade
+					// cleanly.  Truly v2-only payloads/fields fail here.
 					const v1Result = downgradeToV1(result.value);
 					if (!v1Result.ok) {
 						return jsonResponse(
@@ -499,7 +510,8 @@ export async function createBrowserBrokerServer(
 						};
 					}
 				}
-				feedback.add({
+				// Store the original event (tracks eventId for ACK matching).
+				await feedback.add({
 					channelId: event.channelId,
 					eventId: event.eventId,
 					createdAt: event.createdAt,
@@ -515,7 +527,7 @@ export async function createBrowserBrokerServer(
 					// v1 legacy: mark-on-send (not crash-safe).
 					// v2: remains pending until ACK from OMP.
 					if (session.negotiatedProtocolVersion === 1) {
-						feedback.markDelivered(session.channelId, event.eventId);
+						await feedback.markDelivered(session.channelId, event.eventId);
 					}
 				}
 				return jsonResponse({
@@ -676,7 +688,7 @@ export async function createBrowserBrokerServer(
 					// v1 legacy: mark-on-send (not crash-safe).
 					// v2: stays pending until ACK.
 					if (session.negotiatedProtocolVersion === 1) {
-						feedback.markDelivered(session.channelId, stored.eventId);
+						void feedback.markDelivered(session.channelId, stored.eventId);
 					}
 				}
 			},
@@ -701,7 +713,7 @@ export async function createBrowserBrokerServer(
 				if (!session) return;
 				// Only v2 sessions send ACKs; ignore from v1.
 				if (session.negotiatedProtocolVersion < 2) return;
-				feedback.markDelivered(session.channelId, ack.value.eventId);
+				void feedback.markDelivered(session.channelId, ack.value.eventId);
 			},
 		},
 	});

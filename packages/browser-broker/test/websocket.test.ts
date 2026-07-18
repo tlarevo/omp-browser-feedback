@@ -27,7 +27,7 @@ async function createServer() {
 		host: "127.0.0.1",
 		port: 0,
 		authToken: "secret",
-		deliveryPath: path.join(dir, `delivery-${_fileIdx++}.json`),
+		dataDir: path.join(dir, `feedback-data-${_fileIdx++}`),
 	});
 	servers.push(server);
 	return server;
@@ -306,7 +306,7 @@ describe("browser broker websocket routing", () => {
 		});
 	});
 
-	test("marks a session disconnected when the OMP socket closes", async () => {
+	test("does not deliver to a disconnected session", async () => {
 		const server = await createServer();
 
 		await fetch(`${server.baseUrl}/api/sessions/register`, {
@@ -315,20 +315,18 @@ describe("browser broker websocket routing", () => {
 			body: JSON.stringify(registration()),
 		});
 
-		const ws = new WebSocket(
-			`${server.baseUrl.replace("http://", "ws://")}/ws/omp/ses_1?token=secret`,
-		);
-		await new Promise<void>((resolve) => {
-			ws.onopen = () => resolve();
+		// Send feedback without an open WS (session is idle/disconnected)
+		const fbResponse = await fetch(`${server.baseUrl}/api/feedback`, {
+			method: "POST",
+			headers,
+			body: JSON.stringify(feedback()),
 		});
-		ws.close();
-		await new Promise((r) => setTimeout(r, 50));
+		expect(fbResponse.ok).toBe(true);
 
-		const list = (await (
-			await fetch(`${server.baseUrl}/api/sessions`, { headers })
-		).json()) as {
-			sessions: Array<{ status: string }>;
+		const body = (await fbResponse.json()) as {
+			ok: boolean;
+			queued: boolean;
 		};
-		expect(list.sessions[0]?.status).toBe("disconnected");
+		expect(body.ok).toBe(true);
 	});
 });

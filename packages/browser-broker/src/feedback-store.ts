@@ -1,5 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
+import type { JournalEntry, JournalStore } from "./journal";
 
 export type BrowserFeedbackDeliveryStatus = "pending" | "delivered";
 
@@ -11,124 +12,125 @@ export interface StoredBrowserFeedback {
 	deliveryStatus?: BrowserFeedbackDeliveryStatus;
 }
 
-interface DeliveryFileEntry {
-	eventId: string;
-	createdAt?: string;
-	payload?: unknown;
-}
-
-interface DeliveryFile {
-	version: 1;
-	pending: Record<string, DeliveryFileEntry[]>;
-}
-
 export interface InMemoryFeedbackStoreOptions {
-	maxEventsPerChannel: number;
-	/** When set, pending events survive broker restarts. */
-	deliveryPath?: string;
+	journal: JournalStore;
+	screenshotRootDir?: string;
 }
 
-function loadDeliveryFile(filePath: string): DeliveryFile {
-	try {
-		const raw = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-		if (
-			typeof raw === "object" &&
-			raw !== null &&
-			raw.version === 1 &&
-			typeof raw.pending === "object"
-		) {
-			return raw as DeliveryFile;
-		}
-		return { version: 1, pending: {} };
-	} catch {
-		return { version: 1, pending: {} };
+function extractScreenshotRefs(payload: unknown): string[] {
+	if (!payload || typeof payload !== "object") return [];
+	const refs: string[] = [];
+	const p = payload as Record<string, unknown>;
+	const screenshot = p.screenshot as Record<string, unknown> | undefined;
+	if (screenshot && typeof screenshot.ref === "string") refs.push(screenshot.ref);
+	return refs;
+}
+
+function removeScreenshotFiles(screenshotRootDir: string, refs: string[]): void {
+	for (const ref of refs) {
+		const filePath = path.join(screenshotRootDir, ref);
+		if (!filePath.startsWith(screenshotRootDir)) continue;
+		try {
+			if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+		} catch {}
 	}
-}
-
-function persistDeliveryFile(filePath: string, file: DeliveryFile): void {
-	fs.mkdirSync(path.dirname(filePath), { recursive: true, mode: 0o700 });
-	const tmpPath = `${filePath}.${process.pid}.tmp`;
-	fs.writeFileSync(tmpPath, `${JSON.stringify(file, null, 2)}\n`, {
-		mode: 0o600,
-	});
-	fs.chmodSync(tmpPath, 0o600);
-	fs.renameSync(tmpPath, filePath);
-	fs.chmodSync(filePath, 0o600);
-}
-
+	}
 export class InMemoryFeedbackStore {
-	readonly #eventsByChannel = new Map<string, StoredBrowserFeedback[]>();
-	readonly #maxEventsPerChannel: number;
-	readonly #deliveryPath: string | undefined;
+	readonly #journal: JournalStore;
+	readonly #screenshotRootDir: string;
 
 	constructor(options: InMemoryFeedbackStoreOptions) {
-		this.#maxEventsPerChannel = Math.max(
-			1,
-			Math.floor(options.maxEventsPerChannel),
-		);
-		this.#deliveryPath = options.deliveryPath;
-
-		// Hydrate in-memory history from persisted pending events on startup.
-		if (this.#deliveryPath) {
-			const file = loadDeliveryFile(this.#deliveryPath);
-			for (const [channelId, entries] of Object.entries(file.pending)) {
-				const events: StoredBrowserFeedback[] = entries.map((e) => ({
-					channelId,
-					eventId: e.eventId,
-					createdAt: e.createdAt,
-					payload: e.payload,
-					deliveryStatus: "pending",
-				}));
-				this.#eventsByChannel.set(channelId, events);
-			}
-		}
+		this.#journal = options.journal;
+		this.#screenshotRootDir = options.screenshotRootDir ?? "";
 	}
 
-	add(event: StoredBrowserFeedback): StoredBrowserFeedback {
-		const events = this.#eventsByChannel.get(event.channelId) ?? [];
-		// Idempotent: Chrome retries must not create duplicate pending entries.
-		const existing = events.find((e) => e.eventId === event.eventId);
-		if (existing) return existing;
-		const entry: StoredBrowserFeedback = {
-			...event,
-			deliveryStatus: "pending",
+	/**
+	 * Add feedback event to the journal. Async — durability is guaranteed
+	 * before the promise resolves. Returns a bounds error if the channel
+	 * is saturated with unacknowledged events.
+	 */
+	async add(
+		event: StoredBrowserFeedback,
+	): Promise<StoredBrowserFeedback> {
+		const journalEntry: JournalEntry = {
+			type: "event",
+			eventId: event.eventId,
+			createdAt: event.createdAt,
+			payload: event.payload,
 		};
-		events.push(entry);
-		// Evict only delivered records to free history slots.
-		// Pending v2 events MUST survive until their matching ACK.
-		while (events.length > this.#maxEventsPerChannel) {
-			const idx = events.findIndex((e) => e.deliveryStatus === "delivered");
-			if (idx === -1) break;
-			events.splice(idx, 1);
-		}
-		this.#eventsByChannel.set(entry.channelId, events);
-		this.#persist();
-		return entry;
+		await this.#journal.appendEvent(event.channelId, journalEntry);
+		return { ...event, deliveryStatus: "pending" };
 	}
 
 	list(channelId: string): StoredBrowserFeedback[] {
-		return [...(this.#eventsByChannel.get(channelId) ?? [])];
+		const lines = this.#journal.list(channelId);
+		const ackedEventIds = new Set(
+			lines.filter((l) => l.type === "ack").map((l) => l.eventId),
+		);
+		return lines
+			.filter((l): l is JournalEntry => l.type === "event")
+			.map((l) => ({
+				channelId,
+				eventId: l.eventId,
+				createdAt: l.createdAt,
+				payload: l.payload,
+				deliveryStatus: ackedEventIds.has(l.eventId)
+					? ("delivered" as const)
+					: ("pending" as const),
+			}));
 	}
 
 	latest(channelId: string): StoredBrowserFeedback | undefined {
-		return this.#eventsByChannel.get(channelId)?.at(-1);
+		const events = this.list(channelId);
+		return events.at(-1);
 	}
 
+	/**
+	 * Clear all journal entries for a channel and remove referenced screenshots.
+	 * Screenshot deletion happens after journal clear succeeds.
+	 */
 	clear(channelId: string): number {
-		const count = this.#eventsByChannel.get(channelId)?.length ?? 0;
-		this.#eventsByChannel.delete(channelId);
-		this.#persist();
+		const events = this.list(channelId);
+		const count = this.#journal.clear(channelId);
+		// Delete screenshots only AFTER the journal is durably cleared.
+		if (this.#screenshotRootDir && count > 0) {
+			for (const e of events) {
+				const refs = extractScreenshotRefs(e.payload);
+				if (refs.length > 0)
+					removeScreenshotFiles(this.#screenshotRootDir, refs);
+			}
+		}
 		return count;
 	}
 
-	/** Mark a single event as delivered (ACK received for v2). */
-	markDelivered(channelId: string, eventId: string): boolean {
-		const events = this.#eventsByChannel.get(channelId);
-		if (!events) return false;
-		const event = events.find((e) => e.eventId === eventId);
-		if (!event || event.deliveryStatus === "delivered") return false;
-		event.deliveryStatus = "delivered";
-		this.#persist();
+	/**
+	 * Mark a single event as delivered (ACK received for v2).
+	 * Async — ACK is durably recorded before the promise resolves.
+	 * Screenshot is deleted only after successful ACK.
+	 */
+	async markDelivered(channelId: string, eventId: string): Promise<boolean> {
+		const lines = this.#journal.list(channelId);
+		const hasEvent = lines.some(
+			(l) => l.type === "event" && l.eventId === eventId,
+		);
+		if (!hasEvent) return false;
+		const alreadyAcked = lines.some(
+			(l) => l.type === "ack" && l.eventId === eventId,
+		);
+		if (alreadyAcked) return false;
+		await this.#journal.appendAck(channelId, eventId);
+		// Delete screenshot only AFTER the ACK is durably recorded.
+		if (this.#screenshotRootDir) {
+			const event = lines.find(
+				(l): l is JournalEntry =>
+					l.type === "event" && l.eventId === eventId,
+			);
+			if (event) {
+				const refs = extractScreenshotRefs(event.payload);
+				if (refs.length > 0)
+					removeScreenshotFiles(this.#screenshotRootDir, refs);
+			}
+		}
 		return true;
 	}
 
@@ -139,23 +141,5 @@ export class InMemoryFeedbackStore {
 
 	pendingCount(channelId: string): number {
 		return this.pendingByChannel(channelId).length;
-	}
-
-	#persist(): void {
-		if (!this.#deliveryPath) return;
-		const pending: Record<string, DeliveryFileEntry[]> = {};
-		for (const [channelId, events] of this.#eventsByChannel) {
-			const pendingEvents = events.filter(
-				(e) => e.deliveryStatus === "pending",
-			);
-			if (pendingEvents.length > 0) {
-				pending[channelId] = pendingEvents.map((e) => ({
-					eventId: e.eventId,
-					createdAt: e.createdAt,
-					payload: e.payload,
-				}));
-			}
-		}
-		persistDeliveryFile(this.#deliveryPath, { version: 1, pending });
 	}
 }
