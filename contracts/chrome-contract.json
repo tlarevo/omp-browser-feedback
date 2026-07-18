@@ -1,0 +1,75 @@
+{
+	"protocolVersion": 1,
+	"brokerService": "omp-browser-broker",
+	"versionRange": {
+		"min": 1,
+		"max": 1
+	},
+	"endpoints": {
+		"health": {
+			"path": "/api/health",
+			"method": "GET",
+			"auth": "none"
+		},
+		"pairRedeem": {
+			"path": "/api/pair",
+			"method": "POST",
+			"auth": "pairing-code"
+		},
+		"pairOpen": {
+			"path": "/api/pair/open",
+			"method": "POST",
+			"auth": "root-token"
+		},
+		"pairReset": {
+			"path": "/api/pair/reset",
+			"method": "POST",
+			"auth": "root-token"
+		},
+		"sessionsList": {
+			"path": "/api/sessions",
+			"method": "GET",
+			"auth": "root-or-browser"
+		},
+		"sessionRegister": {
+			"path": "/api/sessions/register",
+			"method": "POST",
+			"auth": "root-token"
+		},
+		"sessionUpdate": {
+			"path": "/api/sessions/:sessionId",
+			"method": "PATCH",
+			"auth": "root-token"
+		},
+		"sessionDelete": {
+			"path": "/api/sessions/:sessionId",
+			"method": "DELETE",
+			"auth": "root-token"
+		},
+		"sessionFeedbackList": {
+			"path": "/api/sessions/:sessionId/feedback",
+			"method": "GET",
+			"auth": "root-token"
+		},
+		"sessionFeedbackLatest": {
+			"path": "/api/sessions/:sessionId/feedback/latest",
+			"method": "GET",
+			"auth": "root-token"
+		},
+		"sessionFeedbackClear": {
+			"path": "/api/sessions/:sessionId/feedback",
+			"method": "DELETE",
+			"auth": "root-token"
+		},
+		"feedbackSubmit": {
+			"path": "/api/feedback",
+			"method": "POST",
+			"auth": "root-or-browser"
+		},
+		"wsOmp": {
+			"path": "/ws/omp/:sessionId",
+			"method": "GET",
+			"auth": "root-token"
+		}
+	}
+}
