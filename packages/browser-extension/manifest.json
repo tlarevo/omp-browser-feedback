@@ -5,11 +5,24 @@
 	"description": "Select DOM elements and send feedback to an active OMP session.",
 	"permissions": ["activeTab", "scripting", "storage", "tabs"],
 	"host_permissions": ["http://127.0.0.1:*/*"],
+	"icons": {
+		"16": "icons/icon16.png",
+		"32": "icons/icon32.png",
+		"48": "icons/icon48.png",
+		"128": "icons/icon128.png"
+	},
 	"background": {
 		"service_worker": "dist/background-entry.js"
 	},
 	"action": {
-		"default_popup": "src/popup/index.html"
+		"default_popup": "src/popup/index.html",
+		"default_icon": {
+			"16": "icons/icon16.png",
+			"32": "icons/icon32.png",
+			"48": "icons/icon48.png",
+			"128": "icons/icon128.png"
+		},
+		"default_title": "OMP Browser Feedback"
 	},
 	"content_scripts": [
 		{

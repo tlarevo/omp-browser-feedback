@@ -11,6 +11,7 @@ interface StoredState {
 	browserCapabilityToken?: string;
 	browserInstallId?: string;
 	selectedSessionId?: string;
+	basketCount?: number;
 }
 
 interface DiscoverBrokerResponse {
@@ -26,10 +27,22 @@ function readOptionalString(value: unknown, key: string): string | undefined {
 	return typeof candidate === "string" ? candidate : undefined;
 }
 
+function readOptionalNumber(value: unknown, key: string): number | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const record = value as Record<string, unknown>;
+	const candidate = record[key];
+	return typeof candidate === "number" ? candidate : undefined;
+}
+
 async function readStorage(): Promise<StoredState> {
 	return new Promise((resolve) => {
 		chrome.storage.local.get(
-			["browserCapabilityToken", "browserInstallId", "selectedSessionId"],
+			[
+				"browserCapabilityToken",
+				"browserInstallId",
+				"selectedSessionId",
+				"basketCount",
+			],
 			(items) => {
 				resolve({
 					browserCapabilityToken: readOptionalString(
@@ -38,6 +51,7 @@ async function readStorage(): Promise<StoredState> {
 					),
 					browserInstallId: readOptionalString(items, "browserInstallId"),
 					selectedSessionId: readOptionalString(items, "selectedSessionId"),
+					basketCount: readOptionalNumber(items, "basketCount"),
 				});
 			},
 		);
@@ -70,6 +84,18 @@ async function sendToBackground<T>(
 	});
 }
 
+async function setBadgeText(text: string): Promise<void> {
+	return new Promise((resolve) => {
+		chrome.action.setBadgeText({ text }, resolve);
+	});
+}
+
+async function setBadgeBackgroundColor(color: string): Promise<void> {
+	return new Promise((resolve) => {
+		chrome.action.setBadgeBackgroundColor({ color }, resolve);
+	});
+}
+
 const DEFAULT_PORTS: number[] = Array.from({ length: 21 }, (_, i) => 4317 + i);
 
 function isUnauthorizedError(errorMessage: string | undefined): boolean {
@@ -93,6 +119,15 @@ async function initPopup(): Promise<void> {
 	let currentCapabilityToken = "";
 	let currentSessions: BrowserSessionRegistration[] = [];
 	let currentSelectedId: string | undefined;
+	let currentBasketCount = 0;
+
+	async function syncBadge(): Promise<void> {
+		const text = currentBasketCount > 0 ? String(currentBasketCount) : "";
+		await setBadgeText(text);
+		if (currentBasketCount > 0) {
+			await setBadgeBackgroundColor("#ff9800");
+		}
+	}
 
 	const handlers: PopupActionHandlers = {
 		async onPairWithCode(code) {
@@ -158,6 +193,18 @@ async function initPopup(): Promise<void> {
 			});
 			window.close();
 		},
+
+		async onRefresh() {
+			await refreshFromBroker();
+		},
+
+		async onForget() {
+			await removeStorage(["browserCapabilityToken", "selectedSessionId"]);
+			currentCapabilityToken = "";
+			currentSelectedId = undefined;
+			currentSessions = [];
+			render({ kind: "unpaired", baseUrl: currentBaseUrl });
+		},
 	};
 
 	async function refreshFromBroker(): Promise<void> {
@@ -175,6 +222,8 @@ async function initPopup(): Promise<void> {
 		const stored = await readStorage();
 		currentCapabilityToken = stored.browserCapabilityToken ?? "";
 		currentSelectedId = stored.selectedSessionId;
+		currentBasketCount = stored.basketCount ?? 0;
+		await syncBadge();
 
 		if (!currentCapabilityToken) {
 			render({ kind: "unpaired", baseUrl: currentBaseUrl });
@@ -219,7 +268,16 @@ async function initPopup(): Promise<void> {
 		});
 	}
 
-	render({ kind: "no-broker", attemptedPorts: DEFAULT_PORTS });
+	// Live update: re-render when storage changes (e.g. basketCount updated by background)
+	chrome.storage.onChanged.addListener((changes, area) => {
+		if (area !== "local") return;
+		if (changes.basketCount) {
+			currentBasketCount = (changes.basketCount.newValue as number) ?? 0;
+			syncBadge();
+		}
+	});
+
+	render({ kind: "loading" });
 	await refreshFromBroker();
 }
 
