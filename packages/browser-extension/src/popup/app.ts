@@ -139,6 +139,7 @@ async function initPopup(): Promise<void> {
 	let currentSessions: BrowserSessionRegistration[] = [];
 	let currentBasket: BasketState | undefined;
 	let currentSelectedId: string | undefined;
+	let currentConsoleCapture = false;
 
 	function renderReady(): void {
 		render({
@@ -192,7 +193,13 @@ async function initPopup(): Promise<void> {
 		async onSelectSession(sessionId) {
 			currentSelectedId = sessionId;
 			await writeStorage({ selectedSessionId: sessionId });
-			renderReady();
+			render({
+				kind: "ready",
+				baseUrl: currentBaseUrl,
+				selectedSessionId: currentSelectedId,
+				sessions: currentSessions,
+				consoleCaptureEnabled: currentConsoleCapture,
+			});
 		},
 
 		async onStartPicker(sessionId, note) {
@@ -208,9 +215,6 @@ async function initPopup(): Promise<void> {
 			});
 			window.close();
 		},
-
-		async onStartMultiPick(sessionId) {
-=======
 		async onStartFullpageCapture(sessionId) {
 			const session = currentSessions.find(
 				(item) => item.sessionId === sessionId,
@@ -242,7 +246,28 @@ async function initPopup(): Promise<void> {
 				currentBasket = toBasketState(basketResult.data);
 			}
 			renderReady();
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
+=======
+		async onToggleConsoleCapture(enabled) {
+			currentConsoleCapture = enabled;
+			// Query active tab for its origin, then set consent
+			const tabs = await chrome.tabs.query({
+				active: true,
+				currentWindow: true,
+			});
+			const tab = tabs[0];
+			if (tab?.url) {
+				try {
+					const origin = new URL(tab.url).origin;
+					await sendToBackground({
+						type: "omp:set-console-consent",
+						origin,
+						enabled,
+					});
+				} catch {
+					// invalid URL, ignore
+				}
+			}
+>>>>>>> tharinduabeydeera/tha-120-extension-opt-in-console-error-page-error-capture-attached
 		},
 	};
 	// If background wrote a pickerHint (e.g. shortcut fired with no session),
@@ -323,6 +348,30 @@ async function initPopup(): Promise<void> {
 		const stored = await readStorage();
 		currentCapabilityToken = stored.browserCapabilityToken ?? "";
 		currentSelectedId = stored.selectedSessionId;
+		// Load console capture consent for active tab's origin
+		currentConsoleCapture = false;
+		try {
+			const tabs = await chrome.tabs.query({
+				active: true,
+				currentWindow: true,
+			});
+			const tab = tabs[0];
+			if (tab?.url) {
+				const origin = new URL(tab.url).origin;
+				const consentResult = await sendToBackground<{
+					ok: boolean;
+					data?: boolean;
+				}>({
+					type: "omp:get-console-consent",
+					origin,
+				});
+				if (consentResult.ok && consentResult.data === true) {
+					currentConsoleCapture = true;
+				}
+			}
+		} catch {
+			// ignore — consent defaults to false
+		}
 
 		if (!currentCapabilityToken) {
 			render({ kind: "unpaired", baseUrl: currentBaseUrl });
@@ -359,11 +408,12 @@ async function initPopup(): Promise<void> {
 			return;
 		}
 
-		const basketResult = await sendToBackground<{
-			ok: boolean;
-			data: RawBasketFromBackground;
-		}>({
-			type: "omp:get-basket",
+		render({
+			kind: "ready",
+			baseUrl: currentBaseUrl,
+			selectedSessionId: currentSelectedId,
+			sessions: currentSessions,
+			consoleCaptureEnabled: currentConsoleCapture,
 		});
 		if (basketResult.ok) {
 			currentBasket = toBasketState(basketResult.data);

@@ -89,6 +89,14 @@ export interface BrowserScreenshotRef {
 	height: number;
 	downscaled?: boolean;
 }
+export type ConsoleEntryLevel = "error" | "warn";
+
+export interface ConsoleEntry {
+	timestamp: string;
+	level: ConsoleEntryLevel;
+	message: string;
+	stack?: string;
+}
 
 export interface DomSelectionFeedback {
 	protocolVersion: BrowserProtocolVersion;
@@ -100,8 +108,8 @@ export interface DomSelectionFeedback {
 	element: BrowserElementContext;
 	note?: string;
 	screenshot?: BrowserScreenshotRef;
+	console?: ConsoleEntry[];
 }
-
 export interface PageScreenshotFeedback {
 	protocolVersion: BrowserProtocolVersion;
 	eventId: string;
@@ -111,6 +119,7 @@ export interface PageScreenshotFeedback {
 	page: BrowserPageContext;
 	note?: string;
 	screenshot: BrowserScreenshotRef;
+	console?: ConsoleEntry[];
 }
 
 export interface BatchFeedback {

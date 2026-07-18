@@ -5,9 +5,7 @@ import {
 	type BrowserElementContext,
 	type BrowserFeedbackEvent,
 	type BrowserPageContext,
-	capEntriesByPriority,
-	type PageScreenshotFeedback,
-	truncateToCodePoints,
+	type ConsoleEntry,
 } from "@oh-my-pi/browser-protocol";
 import { activatePicker, type PickerHandle } from "./picker/overlay";
 import {
@@ -38,6 +36,7 @@ export interface DomSelectionFeedbackInput {
 	eventId?: string;
 	createdAt?: string;
 	window?: Window;
+	consoleEntries?: ConsoleEntry[];
 }
 
 const DEFAULT_STYLE_PROPERTIES = [
@@ -391,7 +390,7 @@ export function buildDomSelectionFeedback(
 	input: DomSelectionFeedbackInput,
 ): BrowserFeedbackEvent {
 	const win = input.window ?? window;
-	return {
+	const event: BrowserFeedbackEvent = {
 		protocolVersion: BROWSER_PROTOCOL_VERSION,
 		eventId: input.eventId ?? crypto.randomUUID(),
 		type: "dom.selection",
@@ -401,6 +400,10 @@ export function buildDomSelectionFeedback(
 		element: captureElementContext(input.element, { window: win }),
 		...(input.note ? { note: input.note } : {}),
 	};
+	if (input.consoleEntries && input.consoleEntries.length > 0) {
+		event.console = input.consoleEntries;
+	}
+	return event;
 }
 
 export interface PickerCaptureInput {
@@ -408,6 +411,7 @@ export interface PickerCaptureInput {
 	note?: string;
 	stayActive?: boolean;
 	window?: Window;
+	consoleEntries?: ConsoleEntry[];
 }
 
 export interface PickerCaptureCallbacks {
@@ -490,6 +494,7 @@ export function activateRegionCaptureAndCapture(
 					region,
 					note: input.note,
 					window: win,
+					consoleEntries: input.consoleEntries,
 				}),
 			);
 		},

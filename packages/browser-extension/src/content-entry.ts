@@ -271,8 +271,13 @@ chrome.runtime.onMessage.addListener(
 				activePickerHandle.deactivate();
 				activePickerHandle = undefined;
 			}
-			activePickerHandle = activateRegionCapture(document, {
-				onRegion(region) {
+
+			const consoleEntries = capture.active ? capture.drain() : [];
+
+			activePickerHandle = activatePickerAndCapture(
+				document,
+				{ channelId, note, consoleEntries },
+				(event: BrowserFeedbackEvent | null) => {
 					activePickerHandle = undefined;
 					const event = buildPageScreenshotFeedback({
 						channelId,

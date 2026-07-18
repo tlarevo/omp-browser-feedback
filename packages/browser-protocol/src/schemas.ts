@@ -6,26 +6,6 @@
  * in new code.
  */
 
-<<<<<<< HEAD
-export {
-	v1BrowserFeedbackEventSchema,
-	v1DomSelectionFeedbackSchema,
-	v1PageScreenshotFeedbackSchema,
-	v1SessionRegistrationSchema,
-} from "./v1/schemas";
-export {
-	v2BrowserFeedbackAckSchema,
-	v2BrowserFeedbackEventSchema as browserFeedbackEventSchema,
-	v2BrowserFeedbackEventSchema,
-	v2DomSelectionFeedbackSchema as domSelectionFeedbackSchema,
-	v2DomSelectionFeedbackSchema,
-	v2PageScreenshotFeedbackSchema as pageScreenshotFeedbackSchema,
-	v2PageScreenshotFeedbackSchema,
-	v2SessionRegistrationSchema as browserSessionRegistrationSchema,
-	v2SessionRegistrationSchema,
-	v2SessionStatusSchema as browserSessionStatusSchema,
-} from "./v2/schemas";
-=======
 const nonEmptyString = type("string").atLeastLength(1);
 
 export const browserSessionStatusSchema = type(
@@ -101,6 +81,18 @@ const screenshotSchema = type({
 	height: "number",
 	"downscaled?": "boolean",
 });
+<<<<<<< HEAD
+=======
+const consoleEntrySchema = type({
+	"+": "reject",
+	timestamp: nonEmptyString,
+	level: "'error' | 'warn'",
+	message: "string",
+	"stack?": "string",
+});
+
+const consoleSectionSchema = consoleEntrySchema.array();
+
 export const domSelectionFeedbackSchema = type({
 	"+": "reject",
 	protocolVersion: type.enumerated(BROWSER_PROTOCOL_VERSION),
@@ -112,6 +104,7 @@ export const domSelectionFeedbackSchema = type({
 	element: elementSchema,
 	"note?": "string",
 	"screenshot?": screenshotSchema,
+	"console?": consoleSectionSchema,
 });
 
 export const pageScreenshotFeedbackSchema = type({
@@ -124,6 +117,7 @@ export const pageScreenshotFeedbackSchema = type({
 	page: pageSchema,
 	"note?": "string",
 	screenshot: screenshotSchema,
+	"console?": consoleSectionSchema,
 });
 
 export const batchFeedbackSchema = type({
