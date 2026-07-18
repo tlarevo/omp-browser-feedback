@@ -1,4 +1,5 @@
 import type { BrowserFeedbackEvent } from "@oh-my-pi/browser-protocol";
+import { showAnnotator } from "./annotator/canvas";
 import { activatePickerAndCapture, type PickerHandle } from "./content-script";
 
 let activePickerHandle: PickerHandle | undefined;
@@ -37,6 +38,45 @@ chrome.runtime.onMessage.addListener(
 			);
 			return true;
 		}
+
+		if (message.type === "omp:show-annotator") {
+			const imageDataUrl = message.imageDataUrl as string;
+			const imageWidth = message.imageWidth as number;
+			const imageHeight = message.imageHeight as number;
+			const _event = message.event as BrowserFeedbackEvent;
+
+			if (!imageDataUrl || !imageWidth || !imageHeight) {
+				sendResponse({ ok: false, error: "Missing annotator data" });
+				return false;
+			}
+
+			showAnnotator(document, { imageDataUrl, imageWidth, imageHeight }).then(
+				(result) => {
+					if (!result) {
+						// User sent without annotations or cancelled
+						chrome.runtime.sendMessage({
+							type: "omp:annotator-confirmed",
+							annotatedImageDataUrl: null,
+							annotations: [],
+						});
+					} else {
+						// Convert annotated blob to data URL for message passing
+						const reader = new FileReader();
+						reader.onloadend = () => {
+							chrome.runtime.sendMessage({
+								type: "omp:annotator-confirmed",
+								annotatedImageDataUrl: reader.result,
+								annotations: result.annotations,
+							});
+						};
+						reader.readAsDataURL(result.annotatedBlob);
+					}
+				},
+			);
+			sendResponse({ ok: true });
+			return true;
+		}
+
 		return false;
 	},
 );

@@ -89,9 +89,66 @@ async function handleStartPicker(
 	});
 }
 
+interface AnnotatorImageMessage {
+	imageDataUrl: string;
+	imageWidth: number;
+	imageHeight: number;
+	event: BrowserFeedbackEvent;
+}
+
+interface AnnotatorConfirmedMessage {
+	type: "omp:annotator-confirmed";
+	annotatedImageDataUrl: string | null;
+	annotations: unknown[];
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+	const { promise, resolve, reject } = Promise.withResolvers<string>();
+	const reader = new FileReader();
+	reader.onloadend = () => resolve(reader.result as string);
+	reader.onerror = () => reject(reader.error);
+	reader.readAsDataURL(blob);
+	return promise;
+}
+
+function showAnnotatorInTab(
+	tabId: number,
+	message: AnnotatorImageMessage,
+): Promise<{ annotatedBlob: Blob; annotations: unknown[] } | null> {
+	const { promise, resolve } = Promise.withResolvers<{
+		annotatedBlob: Blob;
+		annotations: unknown[];
+	} | null>();
+
+	function onAnnotatorConfirmed(response: unknown) {
+		chrome.runtime.onMessage.removeListener(onAnnotatorConfirmed);
+		const msg = response as AnnotatorConfirmedMessage | undefined;
+		if (msg?.type !== "omp:annotator-confirmed") {
+			resolve(null);
+			return;
+		}
+		if (!msg.annotatedImageDataUrl) {
+			resolve(null);
+			return;
+		}
+		// Convert annotated data URL back to Blob
+		fetch(msg.annotatedImageDataUrl)
+			.then((r) => r.blob())
+			.then((blob) =>
+				resolve({ annotatedBlob: blob, annotations: msg.annotations }),
+			)
+			.catch(() => resolve(null));
+	}
+
+	chrome.runtime.onMessage.addListener(onAnnotatorConfirmed);
+	chrome.tabs.sendMessage(tabId, { type: "omp:show-annotator", ...message });
+	return promise;
+}
+
 async function handleElementSelected(
 	event: BrowserFeedbackEvent,
 	windowId: number | undefined,
+	tabId: number,
 ): Promise<MessageResponse<void>> {
 	try {
 		const stored = await chrome.storage.local.get([
@@ -134,6 +191,32 @@ async function handleElementSelected(
 					},
 				};
 			}
+		}
+
+		// Show annotation canvas if we have a screenshot and a target tab
+		if (screenshot && tabId >= 0) {
+			const dataUrl = await blobToDataUrl(screenshot);
+			const width =
+				eventToSubmit.type === "dom.selection"
+					? (eventToSubmit.screenshot?.width ?? 0)
+					: eventToSubmit.screenshot.width;
+			const height =
+				eventToSubmit.type === "dom.selection"
+					? (eventToSubmit.screenshot?.height ?? 0)
+					: eventToSubmit.screenshot.height;
+
+			const annotatorResult = await showAnnotatorInTab(tabId, {
+				imageDataUrl: dataUrl,
+				imageWidth: width,
+				imageHeight: height,
+				event: eventToSubmit,
+			});
+
+			// If user annotated, use the flattened image
+			if (annotatorResult) {
+				screenshot = annotatorResult.annotatedBlob;
+			}
+			// If annotatorResult is null, user sent without annotations — use original
 		}
 
 		await submitFeedback({
@@ -218,9 +301,12 @@ chrome.runtime.onMessage.addListener(
 				return false;
 			}
 			const windowId = sender.tab?.windowId;
-			handleElementSelected(event as BrowserFeedbackEvent, windowId).then(
-				sendResponse,
-			);
+			const tabId = sender.tab?.id ?? -1;
+			handleElementSelected(
+				event as BrowserFeedbackEvent,
+				windowId,
+				tabId,
+			).then(sendResponse);
 			return true;
 		}
 
