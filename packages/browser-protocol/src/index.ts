@@ -1,3 +1,4 @@
+export * from "./contract";
 export * from "./limits";
 export * from "./schemas";
 export * from "./types";

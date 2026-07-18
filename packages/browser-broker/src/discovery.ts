@@ -3,8 +3,9 @@ import * as os from "node:os";
 import * as path from "node:path";
 import {
 	BROWSER_BROKER_SERVICE,
-	BROWSER_PROTOCOL_VERSION,
+	BROWSER_PROTOCOL_VERSION_RANGE,
 	type BrowserProtocolVersion,
+	ENDPOINT_HEALTH,
 } from "@oh-my-pi/browser-protocol";
 import {
 	DEFAULT_BROWSER_BROKER_PORT_RANGE,
@@ -68,7 +69,7 @@ export async function discoverCompatibleBroker(
 	for (const port of options.ports) {
 		const baseUrl = `http://${options.host}:${port}`;
 		try {
-			const response = await fetchImpl(`${baseUrl}/api/health`, {
+			const response = await fetchImpl(`${baseUrl}${ENDPOINT_HEALTH.path}`, {
 				signal: AbortSignal.timeout(250),
 			});
 			if (!response.ok) continue;
@@ -78,7 +79,13 @@ export async function discoverCompatibleBroker(
 				broker_id?: string;
 			};
 			if (body.service !== BROWSER_BROKER_SERVICE) continue;
-			if (body.protocol_version !== BROWSER_PROTOCOL_VERSION) continue;
+			const version = body.protocol_version;
+			if (
+				typeof version !== "number" ||
+				version < BROWSER_PROTOCOL_VERSION_RANGE.min ||
+				version > BROWSER_PROTOCOL_VERSION_RANGE.max
+			)
+				continue;
 			if (!body.broker_id) continue;
 			return { baseUrl, brokerId: body.broker_id, port };
 		} catch {}
