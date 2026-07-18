@@ -368,7 +368,6 @@ export function captureElementContext(
 			width: bounds.width,
 			height: bounds.height,
 		},
-<<<<<<< HEAD
 		computedStyles: capEntriesByPriority(
 			computedStyles,
 			styleProperties,
