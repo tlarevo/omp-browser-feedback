@@ -61,9 +61,28 @@ function cssEscape(value: string): string {
 	return escapeIdentifier(value);
 }
 
+function isControlChar(code: number): boolean {
+	// All chars < 0x20 except tab (0x09), plus DEL (0x7F).
+	return (code < 0x20 && code !== 0x09) || code === 0x7f;
+}
+
 function quotedAttributeSelector(name: string, value: string): string {
-	// Attribute values are quoted, so only quotes/backslashes need escaping.
-	return `[${name}="${value.replace(/["\\]/g, "\\$&")}"]`;
+	// Escape backslashes and quotes first, then control characters (LF, CR,
+	// form-feed, etc.) as CSS hex sequences — they are illegal inside CSS
+	// quoted strings and would break querySelectorAll.
+	let result = "";
+	for (let i = 0; i < value.length; i++) {
+		const ch = value[i];
+		const code = value.charCodeAt(i);
+		if (ch === '"' || ch === "\\") {
+			result += `\\${ch}`;
+		} else if (isControlChar(code)) {
+			result += `\\${code.toString(16)} `;
+		} else {
+			result += ch;
+		}
+	}
+	return `[${name}="${result}"]`;
 }
 
 // Uniqueness is verified against the element's own root (document or shadow root),
@@ -90,7 +109,8 @@ function isGeneratedClass(cls: string): boolean {
 	// CSS-in-JS: emotion (css-1a2b3c), styled-components (sc-bdVaJa), styled-jsx.
 	if (/^(css|sc|jsx|emotion)-[0-9a-z]+$/i.test(cls)) return true;
 	// CSS Modules hash suffix: Button__3xY9z, styles_container__a1b2c.
-	if (/__[0-9a-z]{4,}$/i.test(cls)) return true;
+	// Requires a digit in the suffix to avoid false-positiving on BEM names like card__header.
+	if (/__[a-z0-9]*\d[a-z0-9]*$/i.test(cls)) return true;
 	// Pure hex/hash token.
 	if (/^[0-9a-f]{6,}$/i.test(cls)) return true;
 	// Mixed alnum single run that looks random (letters + digits, long, digit run).
@@ -146,35 +166,60 @@ function stableClasses(element: Element): string[] {
 	);
 }
 
+// Last-resort candidates: generated and utility classes that are filtered out
+// by standaloneCandidates but may be the only unique anchor in edge cases.
+// Each candidate is verified unique and within length bounds.
+function* lastResortCandidates(element: Element): Generator<string> {
+	for (const cls of classList(element)) {
+		if (!cls) continue;
+		if (!isGeneratedClass(cls) && !isUtilityClass(cls)) continue;
+		const s = `.${cssEscape(cls)}`;
+		if (s.length <= MAX_SELECTOR_LENGTH) yield s;
+	}
+}
+
 function tagName(element: Element): string {
 	// localName preserves case for SVG (e.g. linearGradient) unlike tagName.
 	return element.localName;
 }
 
 // Ordered standalone candidates for an element, highest priority first.
+// Candidates exceeding MAX_SELECTOR_LENGTH are skipped — they can never be
+// verified unique within the configured bounds.
 function* standaloneCandidates(element: Element): Generator<string> {
 	for (const attribute of TEST_ATTRIBUTES) {
 		const value = element.getAttribute(attribute);
-		if (value) yield quotedAttributeSelector(attribute, value);
+		if (value) {
+			const s = quotedAttributeSelector(attribute, value);
+			if (s.length <= MAX_SELECTOR_LENGTH) yield s;
+		}
 	}
 
 	const id = element.id;
 	if (id && !/\s/.test(id) && !isGeneratedClass(id)) {
-		yield `#${cssEscape(id)}`;
+		const s = `#${cssEscape(id)}`;
+		if (s.length <= MAX_SELECTOR_LENGTH) yield s;
 	}
 
 	for (const attribute of ACCESSIBLE_ATTRIBUTES) {
 		const value = element.getAttribute(attribute);
-		if (value) yield quotedAttributeSelector(attribute, value);
+		if (value) {
+			const s = quotedAttributeSelector(attribute, value);
+			if (s.length <= MAX_SELECTOR_LENGTH) yield s;
+		}
 	}
 
 	for (const attribute of SEMANTIC_ATTRIBUTES) {
 		const value = element.getAttribute(attribute);
-		if (value) yield quotedAttributeSelector(attribute, value);
+		if (value) {
+			const s = quotedAttributeSelector(attribute, value);
+			if (s.length <= MAX_SELECTOR_LENGTH) yield s;
+		}
 	}
 
 	for (const cls of stableClasses(element)) {
-		yield `.${cssEscape(cls)}`;
+		const s = `.${cssEscape(cls)}`;
+		if (s.length <= MAX_SELECTOR_LENGTH) yield s;
 	}
 }
 
@@ -206,8 +251,12 @@ function nthOfType(element: Element): string {
 }
 
 // Walk ancestors combining `part(node)` per level, returning the first unique
-// path within the depth/length bounds, else the bounded best effort.
-function buildPath(element: Element, part: (node: Element) => string): string {
+// path within MAX_ANCESTOR_DEPTH and MAX_SELECTOR_LENGTH.
+// Returns undefined when no unique path is found within bounds.
+function buildPath(
+	element: Element,
+	part: (node: Element) => string,
+): string | undefined {
 	const parts: string[] = [];
 	let current: Element | null = element;
 	let depth = 0;
@@ -215,14 +264,13 @@ function buildPath(element: Element, part: (node: Element) => string): string {
 		parts.unshift(part(current));
 		const selector = parts.join(" > ");
 		if (selector.length > MAX_SELECTOR_LENGTH) {
-			parts.shift();
-			break;
+			return undefined;
 		}
 		if (isUnique(element, selector)) return selector;
 		current = current.parentElement;
 		depth++;
 	}
-	return parts.join(" > ");
+	return undefined;
 }
 
 export function generateSelector(element: Element): string {
@@ -232,8 +280,17 @@ export function generateSelector(element: Element): string {
 
 	// Ancestor qualification with stable descriptors.
 	const semanticPath = buildPath(element, localPart);
-	if (isUnique(element, semanticPath)) return semanticPath;
+	if (semanticPath && isUnique(element, semanticPath)) return semanticPath;
 
-	// Positional fallback.
-	return buildPath(element, nthOfType);
+	// Positional fallback — verify before returning.
+	const positionalPath = buildPath(element, nthOfType);
+	if (positionalPath && isUnique(element, positionalPath))
+		return positionalPath;
+
+	// Last resort: generated/utility classes, verified unique.
+	for (const candidate of lastResortCandidates(element)) {
+		if (isUnique(element, candidate)) return candidate;
+	}
+
+	throw new Error("No unique selector found within configured bounds");
 }

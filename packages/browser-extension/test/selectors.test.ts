@@ -23,6 +23,12 @@ const fixtures: Fixture[] = [
 		expected: '[data-testid="submit"]',
 	},
 	{
+		name: "overlong test attribute skipped in favor of shorter verified selector",
+		html: `<button data-testid="${"x".repeat(500)}" id="go">Click</button>`,
+		target: "#go",
+		expected: "#go",
+	},
+	{
 		name: "unique id beats accessible and stable class candidates",
 		html: '<button id="checkout" aria-label="Pay now" class="primary">Pay</button>',
 		target: "#checkout",
@@ -45,6 +51,12 @@ const fixtures: Fixture[] = [
 		html: '<div class="hero-banner">a</div><div class="hero-footer">b</div>',
 		target: ".hero-banner",
 		expected: ".hero-banner",
+	},
+	{
+		name: "BEM class names are not classified as generated",
+		html: '<div class="card__header">a</div><div class="card__footer">b</div>',
+		target: ".card__header",
+		expected: ".card__header",
 	},
 	{
 		name: "generated hash-like classes are omitted",
@@ -120,6 +132,22 @@ describe("generateSelector", () => {
 		});
 	}
 });
+describe("generateSelector control characters", () => {
+	test("newline in attribute value is CSS-escaped via setAttribute", () => {
+		const { document } = parseHTML(
+			"<!doctype html><body><button>A</button><button>B</button></body>",
+		);
+		const element = document.querySelector("button") as Element;
+		element.setAttribute("data-testid", "line1\nline2");
+
+		const selector = generateSelector(element);
+		expect(selector).toBe('[data-testid="line1\\a line2"]');
+
+		const matches = document.querySelectorAll(selector);
+		expect(matches.length).toBe(1);
+		expect(matches[0]).toBe(element);
+	});
+});
 
 describe("generateSelector bounds", () => {
 	test("deep ancestry stays within the configured depth and resolves uniquely", () => {
@@ -134,8 +162,73 @@ describe("generateSelector bounds", () => {
 		expect(element).toBeTruthy();
 
 		const selector = generateSelector(element as Element);
-		// At most MAX_ANCESTOR_DEPTH (8) `>`-joined segments.
-		expect(selector.split(" > ").length).toBeLessThanOrEqual(8);
+		// The deep button's only div ancestor immediately disambiguates from the
+		// shallow button (whose parent is <body>).
+		expect(selector).toBe("div > button");
+
+		const matches = document.querySelectorAll(selector);
+		expect(matches.length).toBe(1);
+		expect(matches[0]).toBe(element as Element);
+	});
+
+	test("structurally indistinguishable branches beyond depth bound throw", () => {
+		// Two identical >8-level branches — the branching point is beyond
+		// MAX_ANCESTOR_DEPTH, so no positional path can distinguish them.
+		const depth = 12;
+		const branch = `${"<div>".repeat(depth)}<span>X</span>${"</div>".repeat(depth)}`;
+		const branch2 = `${"<div>".repeat(depth)}<span>Y</span>${"</div>".repeat(depth)}`;
+		const { document } = parseHTML(
+			`<!doctype html><body><div>${branch}${branch2}</div></body>`,
+		);
+		const element = document.querySelectorAll("span")[0];
+		expect(element).toBeTruthy();
+
+		expect(() => generateSelector(element as Element)).toThrow(
+			"No unique selector found within configured bounds",
+		);
+	});
+
+	test("overlong semantic path is rejected in favor of short positional fallback", () => {
+		// Two branches diverge within MAX_ANCESTOR_DEPTH so nthOfType can
+		// disambiguate, but long class names cause the localPart path to exceed
+		// MAX_SELECTOR_LENGTH (512). The generator falls back to nth-of-type.
+		const cls =
+			"card-section-panel-content-wrapper-container-item-block-element-node-".repeat(
+				4,
+			);
+		const open = `<div class="${cls}">`.repeat(2);
+		const close = "</div>".repeat(2);
+		const branch1 = `${open}<span>A</span>${close}`;
+		const branch2 = `${open}<span>B</span>${close}`;
+		const { document } = parseHTML(
+			`<!doctype html><body><div>${branch1}${branch2}</div></body>`,
+		);
+		const element = document.querySelectorAll("span")[0];
+		expect(element).toBeTruthy();
+
+		const selector = generateSelector(element as Element);
+		// Semantic path (localPart) overflows MAX_SELECTOR_LENGTH at depth 2;
+		// nth-of-type path is short and unique via the branching parent.
+		expect(selector).toBe("div:nth-of-type(1) > div > span");
+
+		const matches = document.querySelectorAll(selector);
+		expect(matches.length).toBe(1);
+		expect(matches[0]).toBe(element as Element);
+	});
+	test("unique generated class is used as last resort when positional paths fail", () => {
+		// Deep identical branches beyond MAX_ANCESTOR_DEPTH — positional paths
+		// can't disambiguate, but a generated class on the target IS unique.
+		const depth = 12;
+		const branch = `${"<div>".repeat(depth)}<div class="css-abc123">A</div>${"</div>".repeat(depth)}`;
+		const branch2 = `${"<div>".repeat(depth)}<div>B</div>${"</div>".repeat(depth)}`;
+		const { document } = parseHTML(
+			`<!doctype html><body><div>${branch}${branch2}</div></body>`,
+		);
+		const element = document.querySelector(".css-abc123");
+		expect(element).toBeTruthy();
+
+		const selector = generateSelector(element as Element);
+		expect(selector).toBe(".css-abc123");
 
 		const matches = document.querySelectorAll(selector);
 		expect(matches.length).toBe(1);
