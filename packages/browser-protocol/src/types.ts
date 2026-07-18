@@ -56,6 +56,16 @@ export interface SelectorSegment {
 	shadowRoot: boolean;
 }
 
+export interface BrowserComponentAncestor {
+	name: string;
+	source?: string;
+}
+
+export interface BrowserComponentContext {
+	framework: string;
+	ancestors: BrowserComponentAncestor[];
+}
+
 export interface BrowserElementContext {
 	selector: string;
 	xpath?: string;
@@ -66,8 +76,10 @@ export interface BrowserElementContext {
 	bounds: BrowserElementBounds;
 	computedStyles: Record<string, string>;
 	accessibility?: BrowserAccessibilityContext;
+<<<<<<< HEAD
 	selectorSegments?: SelectorSegment[];
 	shadowRoot?: boolean;
+	component?: BrowserComponentContext;
 }
 
 export interface BrowserScreenshotRef {

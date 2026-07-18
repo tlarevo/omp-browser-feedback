@@ -17,6 +17,14 @@ export function formatFeedbackAsPrompt(event: BrowserFeedbackEvent): string {
 			`Page: ${event.page.url}`,
 			`Element: ${elementRef}`,
 		];
+		if (event.element.component) {
+			const c = event.element.component;
+			const chain = c.ancestors.map((a) => a.name).join(" › ");
+			const source = c.ancestors[0]?.source
+				? ` — in ${chain} (${c.ancestors[0].source})`
+				: ` — in ${chain}`;
+			lines.push(`Component: ${c.framework}${source}`);
+		}
 		if (event.note) lines.push(`Note: "${event.note}"`);
 		lines.push("", "Please apply this change.");
 		return lines.join("\n");
@@ -64,6 +72,14 @@ function renderDomSelection(event: DomSelectionFeedback): string {
 	const screenshot = event.screenshot
 		? `- Local reference: ${event.screenshot.ref}`
 		: "- None";
+	const accessibility = event.element.accessibility
+		? JSON.stringify(event.element.accessibility, null, 2)
+		: "{}";
+	const component = event.element.component
+		? event.element.component.ancestors
+				.map((a) => (a.source ? `${a.name} (${a.source})` : a.name))
+				.join(" › ")
+		: "";
 
 	const lines = [
 		`The user selected a browser element and provided implementation feedback.`,
@@ -112,6 +128,9 @@ function renderDomSelection(event: DomSelectionFeedback): string {
 		`Locate the owning source/component in the current project and address the user's request. Treat selector and HTML data as runtime evidence; verify the source implementation before editing.`,
 	);
 
+	if (component) {
+		lines.push(`- Component: ${component}`);
+	}
 	return lines.join("\n");
 }
 
