@@ -24,7 +24,7 @@ async function createServer() {
 		port: 0,
 		authToken: "secret",
 		pairingRegistryPath: path.join(dir, "pairing-registry.json"),
-		dataDir: path.join(dir, "feedback-data"),
+		screenshotRootDir: path.join(dir, "screenshots"),
 	});
 	servers.push(server);
 	return server;
@@ -481,7 +481,7 @@ describe("browser broker server", () => {
 });
 describe("batch.feedback", () => {
 	const validItem = {
-		protocolVersion: 1,
+		protocolVersion: BROWSER_PROTOCOL_VERSION,
 		eventId: "evt_item_1",
 		type: "dom.selection",
 		channelId: "ses_1",
@@ -509,7 +509,7 @@ describe("batch.feedback", () => {
 			method: "POST",
 			headers,
 			body: JSON.stringify({
-				protocolVersion: 1,
+				protocolVersion: BROWSER_PROTOCOL_VERSION,
 				eventId: "batch_1",
 				type: "batch.feedback",
 				channelId: "ses_1",
@@ -534,7 +534,7 @@ describe("batch.feedback", () => {
 		form.set(
 			"event",
 			JSON.stringify({
-				protocolVersion: 1,
+				protocolVersion: BROWSER_PROTOCOL_VERSION,
 				eventId: "batch_2",
 				type: "batch.feedback",
 				channelId: "ses_1",
@@ -583,7 +583,7 @@ describe("batch.feedback", () => {
 			method: "POST",
 			headers,
 			body: JSON.stringify({
-				protocolVersion: 1,
+				protocolVersion: BROWSER_PROTOCOL_VERSION,
 				eventId: "batch_large",
 				type: "batch.feedback",
 				channelId: "ses_1",

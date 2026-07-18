@@ -27,7 +27,7 @@ async function createServer() {
 		host: "127.0.0.1",
 		port: 0,
 		authToken: "secret",
-		dataDir: path.join(dir, `feedback-data-${_fileIdx++}`),
+		screenshotRootDir: path.join(dir, `screenshots-${_fileIdx++}`),
 	});
 	servers.push(server);
 	return server;

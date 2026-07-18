@@ -70,7 +70,8 @@ export type PopupState =
 			sessions: BrowserSessionRegistration[];
 			consoleCaptureEnabled?: boolean;
 	  }
-	| { kind: "error"; message: string };
+	| { kind: "error"; message: string }
+	| { kind: "capturing"; sessions: BrowserSessionRegistration[]; basket?: { total: number; items: BasketItemState[]; error?: string } | null; current?: number; total?: number };
 
 export interface BasketItemState {
 	itemId: string;
@@ -87,6 +88,17 @@ export interface BasketState {
 }
 
 export interface PopupActionHandlers {
+	onRetry?: () => void;
+	onRemoveBasketItem?: (id: string) => void;
+	onSubmitBatch?: () => void;
+	onCancelCapture?: () => void;
+	onForget?: () => void;
+	onPairWithCode?: (code: string) => void;
+	onRefresh?: () => void;
+	onSelectSession?: (id: string) => void;
+	onStartPicker?: (sessionId: string) => void;
+	onToggleConsoleCapture?: (enabled: boolean) => void;
+	basket?: { total: number; items: unknown[] } | null;
 	onPairWithCode?: (code: string) => void;
 	onSelectSession?: (sessionId: string) => void;
 	onStartPicker?: (sessionId: string, note?: string) => void;

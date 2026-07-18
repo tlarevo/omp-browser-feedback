@@ -31,6 +31,7 @@ import {
 	utf8ByteLength,
 	validateFeedbackEvent,
 	validateFeedbackAck,
+	validateBatchFeedback,
 	validateSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
 import type { Server } from "bun";
@@ -53,6 +54,11 @@ export interface BrowserBrokerServerOptions {
 	maxEventsPerChannel?: number;
 	pairingRegistryPath?: string;
 	screenshotRootDir?: string;
+	dataDir?: string;
+	heartbeatIntervalMs?: number;
+	graceMs?: number;
+	idleAfterMs?: number;
+	heartbeatTimeoutMs?: number;
 	maxScreenshotBytes?: number;
 	clock?: import("./pairing-store").PairingStoreClock;
 }
@@ -447,11 +453,28 @@ export async function createBrowserBrokerServer(
 					);
 				}
 				const raw = await readFeedbackRequest(request, screenshots);
-				const result = validateFeedbackEvent(raw);
+				let result;
+				if (raw && typeof raw === "object" && "type" in raw && (raw as any).type === "batch.feedback") {
+						result = validateBatchFeedback(raw);
+					} else {
+					const declaredVersion = inferProtocolVersion(raw);
+					result = validateFeedbackEvent(raw, declaredVersion ?? 2);
+				}
 				if (!result.ok)
 					return jsonResponse(
 						{ ok: false, code: "invalid_feedback", message: result.error },
 						{ status: 400 },
+					);
+				const limitViolations = checkFeedbackLimits(result.value);
+				if (limitViolations.length > 0)
+					return jsonResponse(
+						{
+							ok: false,
+							code: limitViolations[0].code,
+							message: limitViolations.map((v) => v.message).join("; "),
+							violations: limitViolations,
+						},
+						{ status: 422 },
 					);
 				if (
 					result.value.type === "batch.feedback" &&

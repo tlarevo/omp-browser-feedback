@@ -112,6 +112,8 @@ export interface BrowserFeedbackLimitViolation {
 	actual: number;
 	/** Unit the limit and actual are measured in. */
 	unit: "codePoints" | "count";
+	/** Human-readable message. */
+	message?: string;
 }
 
 /**

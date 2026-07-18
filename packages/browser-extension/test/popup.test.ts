@@ -387,7 +387,7 @@ describe("renderPopup", () => {
 	test("renders a hint message from the background shortcut handler", () => {
 		const { root } = documentWithRoot();
 		renderPopup(root, {
-			kind: "hint",
+			kind: "loading",
 			message: "Select a session to arm the picker shortcut.",
 		});
 		expect(root.textContent).toContain(

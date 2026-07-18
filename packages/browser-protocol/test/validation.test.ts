@@ -142,7 +142,7 @@ describe("batch.feedback validation", () => {
 			channelId: "ses_123",
 			createdAt: "2026-06-27T10:00:00.000Z",
 			items: [{ ...validItem, tagName: "" }],
-		});
+		}, BROWSER_PROTOCOL_VERSION);
 		expect(result.ok).toBe(false);
 	});
 });

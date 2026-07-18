@@ -8,6 +8,8 @@ import {
 } from "@oh-my-pi/browser-protocol";
 import { Event as LinkedomEvent, parseHTML } from "linkedom";
 import {
+	captureAccessibility,
+	generateXpath,
 	activatePickerAndCapture,
 	buildDomSelectionFeedback,
 	captureElementContext,
@@ -658,4 +660,8 @@ describe("captureElementContext redaction", () => {
 		expect(ctx.outerHtml).not.toContain("hunter2");
 		expect(ctx.outerHtml).toContain("[REDACTED]");
 	});
+});
+
+
+});
 });
