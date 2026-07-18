@@ -158,6 +158,10 @@ async function initPopup(): Promise<void> {
 			});
 			window.close();
 		},
+		async onRetry() {
+			render({ kind: "loading" });
+			await refreshFromBroker();
+		},
 	};
 
 	async function refreshFromBroker(): Promise<void> {
@@ -219,7 +223,7 @@ async function initPopup(): Promise<void> {
 		});
 	}
 
-	render({ kind: "no-broker", attemptedPorts: DEFAULT_PORTS });
+	render({ kind: "loading" });
 	await refreshFromBroker();
 }
 

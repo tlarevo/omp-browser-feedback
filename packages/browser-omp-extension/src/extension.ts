@@ -15,9 +15,10 @@ import {
 } from "./client";
 import { handleBfCommand } from "./commands";
 import { readConfig } from "./config";
+import { logError, logInfo } from "./logger";
 import { formatFeedbackAsPrompt } from "./renderer";
 
-type OnFeedbackFn = (event: BrowserFeedbackEvent) => void;
+type OnFeedbackFn = (event: BrowserFeedbackEvent) => Promise<void>;
 
 function renderBrowserStatus(status: BrowserFeedbackConnectionStatus): string {
 	if (status.state === "connected") {
@@ -41,6 +42,19 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 	pi.setLabel("Browser Feedback");
 
 	let _capturedCtx: Pick<ExtensionCommandContext, "ui"> | undefined;
+	const _pendingFeedback: string[] = [];
+
+	function drainPendingFeedback(): void {
+		if (!_capturedCtx || _pendingFeedback.length === 0) return;
+		for (const prompt of _pendingFeedback) {
+			_capturedCtx.ui.setEditorText(prompt);
+		}
+		_pendingFeedback.length = 0;
+		_capturedCtx.ui.notify(
+			"Browser feedback ready — review and press Enter",
+			"info",
+		);
+	}
 
 	function makeOnFeedback(): OnFeedbackFn {
 		return async (event: BrowserFeedbackEvent) => {
@@ -55,13 +69,16 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 					"info",
 				);
 			} else {
-				pi.sendUserMessage(prompt);
+				// Queue until ctx is captured — never auto-send when autoRun is off
+				_pendingFeedback.push(prompt);
+				logInfo("Feedback queued (TUI not ready yet)");
 			}
 		};
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
-		_capturedCtx = ctx;
+		_capturedCtx = ctx.hasUI ? ctx : undefined;
+		drainPendingFeedback();
 		const onFeedback = makeOnFeedback();
 		try {
 			const result = await ensureBrokerRunning();
@@ -100,13 +117,21 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 				},
 			});
 			setActiveFeedbackSubscription(sub);
-		} catch {
-			// broker unavailable; user can connect manually with /bf connect
+		} catch (err) {
+			const reason = err instanceof Error ? err.message : String(err);
+			const hint = reason.includes("/bf broker")
+				? ""
+				: " Try /bf broker start.";
+			logError("Broker startup failed:", reason);
+			if (ctx.hasUI) {
+				ctx.ui.notify(`Browser broker unavailable: ${reason}${hint}`, "error");
+			}
 		}
 	});
 
 	pi.on("session_shutdown", async () => {
 		_capturedCtx = undefined;
+		_pendingFeedback.length = 0;
 		await stopActiveBroker();
 	});
 
@@ -132,6 +157,7 @@ export default function browserFeedbackExtension(pi: ExtensionAPI): void {
 		},
 		handler: async (args: string, ctx: ExtensionCommandContext) => {
 			_capturedCtx = ctx;
+			drainPendingFeedback();
 			await handleBfCommand(args, ctx, makeOnFeedback());
 		},
 	});

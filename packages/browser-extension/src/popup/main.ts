@@ -39,6 +39,7 @@ export async function ensureBrowserInstallId(): Promise<string> {
 }
 
 export type PopupState =
+	| { kind: "loading" }
 	| { kind: "no-broker"; attemptedPorts: number[] }
 	| { kind: "unpaired"; baseUrl: string }
 	| { kind: "pairing-error"; baseUrl: string; message: string }
@@ -55,6 +56,7 @@ export interface PopupActionHandlers {
 	onPairWithCode?: (code: string) => void;
 	onSelectSession?: (sessionId: string) => void;
 	onStartPicker?: (sessionId: string, note?: string) => void;
+	onRetry?: () => void;
 }
 
 function clear(element: HTMLElement): void {
@@ -105,12 +107,18 @@ export function renderPopup(
 	clear(root);
 	const document = root.ownerDocument;
 
+	if (state.kind === "loading") {
+		appendStatus(document, root, "Connecting to broker\u2026");
+		return;
+	}
+
 	if (state.kind === "no-broker") {
 		appendStatus(
 			document,
 			root,
 			`No OMP browser broker found on ports ${state.attemptedPorts.join(", ")}.`,
 		);
+		root.append(createButton(document, "Retry", handlers.onRetry));
 		return;
 	}
 

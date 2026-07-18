@@ -8,6 +8,7 @@ import {
 	type BrowserFeedbackEvent,
 	type BrowserSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
+import { logWarn } from "./logger";
 
 export type BrowserBrokerFetch = (
 	url: string | URL,
@@ -49,6 +50,7 @@ export interface BrowserFeedbackConnectionStatus {
 	state: "connecting" | "connected" | "reconnecting" | "closed";
 	reconnectAttempts: number;
 	baseUrl: string;
+	malformedMessages: number;
 }
 
 type BrowserBrokerTimeoutHandle = ReturnType<typeof globalThis.setTimeout>;
@@ -314,6 +316,7 @@ export class BrowserBrokerClient {
 		let reconnectTimer: BrowserBrokerTimeoutHandle | undefined;
 		let closed = false;
 		let state: BrowserFeedbackConnectionStatus["state"] = "connecting";
+		let malformedMessages = 0;
 		const seenEventIds = new Set<string>();
 
 		const publishStatus = () => {
@@ -321,6 +324,7 @@ export class BrowserBrokerClient {
 				state,
 				reconnectAttempts,
 				baseUrl: this.#baseUrl,
+				malformedMessages,
 			});
 		};
 
@@ -356,7 +360,11 @@ export class BrowserBrokerClient {
 						}
 					}
 					onFeedback(msg.event);
-				} catch {}
+				} catch {
+					malformedMessages++;
+					logWarn("Malformed WS message (count:", malformedMessages, ")");
+					publishStatus();
+				}
 			};
 
 			const detachActiveSocket = () => {
@@ -453,6 +461,7 @@ export class BrowserBrokerClient {
 					state,
 					reconnectAttempts,
 					baseUrl: brokerClient.#baseUrl,
+					malformedMessages,
 				};
 			},
 		};

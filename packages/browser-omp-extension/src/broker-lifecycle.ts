@@ -97,16 +97,15 @@ export async function ensureBrokerRunning(
 			});
 			break;
 		} catch {
-			// port occupied, try next
+			console.debug("[browser-feedback] Port", port, "occupied, trying next");
 		}
 	}
 
 	if (!server) {
-		server = await createBrowserBrokerServer({
-			host: DEFAULT_BROWSER_BROKER_HOST,
-			port: 0,
-			authToken,
-		});
+		const range = `${ports[0]}-${ports[ports.length - 1]}`;
+		throw new Error(
+			`All browser broker ports occupied (${range}). Stop the conflicting service or run /bf broker start --port <N>.`,
+		);
 	}
 
 	_activeBroker = server;
