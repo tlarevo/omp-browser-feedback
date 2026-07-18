@@ -2,6 +2,7 @@ import type {
 	BrowserFeedbackEvent,
 	BrowserSessionRegistration,
 	DomSelectionFeedback,
+	PageScreenshotFeedback,
 } from "@oh-my-pi/browser-protocol";
 import {
 	discoverBroker,
@@ -148,6 +149,67 @@ async function handleElementSelected(
 	}
 }
 
+async function handleRegionSelected(
+	event: BrowserFeedbackEvent,
+	windowId: number | undefined,
+	region: { x: number; y: number; width: number; height: number },
+): Promise<MessageResponse<void>> {
+	try {
+		const stored = await chrome.storage.local.get([
+			"brokerBaseUrl",
+			"browserCapabilityToken",
+		]);
+		const baseUrl =
+			typeof stored.brokerBaseUrl === "string"
+				? stored.brokerBaseUrl
+				: undefined;
+		const capabilityToken =
+			typeof stored.browserCapabilityToken === "string"
+				? stored.browserCapabilityToken
+				: undefined;
+		if (!baseUrl || !capabilityToken) {
+			return { ok: false, error: "Browser is not paired" };
+		}
+
+		let eventToSubmit: BrowserFeedbackEvent = event;
+		let screenshot: Blob | undefined;
+
+		if (windowId !== undefined && event.type === "page.screenshot") {
+			const ssEvent = event as PageScreenshotFeedback;
+			const captured = await captureAndCrop(
+				windowId,
+				region,
+				ssEvent.page.viewport.devicePixelRatio,
+				0, // no padding for region capture
+			).catch(() => undefined);
+
+			if (captured) {
+				screenshot = captured.blob;
+				eventToSubmit = {
+					...ssEvent,
+					screenshot: {
+						kind: captured.kind,
+						ref: "pending",
+						mimeType: "image/png",
+						width: captured.width,
+						height: captured.height,
+					},
+				};
+			}
+		}
+
+		await submitFeedback({
+			baseUrl,
+			capabilityToken,
+			event: eventToSubmit,
+			screenshot,
+		});
+		return { ok: true, data: undefined };
+	} catch (error) {
+		return { ok: false, error: String(error) };
+	}
+}
+
 chrome.runtime.onMessage.addListener(
 	(
 		message: { type: string; [key: string]: unknown },
@@ -221,6 +283,22 @@ chrome.runtime.onMessage.addListener(
 			handleElementSelected(event as BrowserFeedbackEvent, windowId).then(
 				sendResponse,
 			);
+			return true;
+		}
+
+		if (message.type === "omp:region-selected") {
+			const event = message.event;
+			const region = message.region;
+			if (!event || !region) {
+				sendResponse({ ok: false, error: "Missing feedback event or region" });
+				return false;
+			}
+			const windowId = sender.tab?.windowId;
+			handleRegionSelected(
+				event as BrowserFeedbackEvent,
+				windowId,
+				region as { x: number; y: number; width: number; height: number },
+			).then(sendResponse);
 			return true;
 		}
 
