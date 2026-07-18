@@ -6,7 +6,7 @@
  * in new code.
  */
 import { type } from "arktype";
-import { BROWSER_PROTOCOL_VERSION } from "./v2/schemas";
+import { BROWSER_PROTOCOL_VERSION } from "./version";
 
 const nonEmptyString = type("string").atLeastLength(1);
 

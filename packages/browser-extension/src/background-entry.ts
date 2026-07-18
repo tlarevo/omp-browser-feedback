@@ -173,6 +173,7 @@ async function detectComponent(
 	} catch {
 		return null;
 	}
+}
 interface AnnotatorImageMessage {
 	imageDataUrl: string;
 	imageWidth: number;

@@ -328,6 +328,7 @@ chrome.runtime.onMessage.addListener(
 				}
 				sendResponse({ ok: true });
 			});
+		}
 		if (message.type === "omp:show-annotator") {
 			const imageDataUrl = message.imageDataUrl as string;
 			const imageWidth = message.imageWidth as number;

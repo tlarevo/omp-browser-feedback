@@ -412,7 +412,6 @@ export function captureElementContext(
 	const xpath = generateXpath(element);
 	const accessibility = captureAccessibility(element);
 
-	const text = element.textContent?.trim();
 	const redactedAttributes = redactSensitiveAttributes(
 		attributes,
 		element.tagName,
