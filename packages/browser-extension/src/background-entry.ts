@@ -80,6 +80,31 @@ async function handleListSessions(
 	}
 }
 
+async function handleGetSessions(): Promise<
+	MessageResponse<BrowserSessionRegistration[]>
+> {
+	try {
+		const stored = await chrome.storage.local.get([
+			"brokerBaseUrl",
+			"browserCapabilityToken",
+		]);
+		const baseUrl =
+			typeof stored.brokerBaseUrl === "string"
+				? stored.brokerBaseUrl
+				: undefined;
+		const capabilityToken =
+			typeof stored.browserCapabilityToken === "string"
+				? stored.browserCapabilityToken
+				: undefined;
+		if (!baseUrl || !capabilityToken) {
+			return { ok: false, error: "Browser is not paired" };
+		}
+		return handleListSessions(baseUrl, capabilityToken);
+	} catch (error) {
+		return { ok: false, error: String(error) };
+	}
+}
+
 async function handleStartPicker(
 	channelId: string,
 	note: string | undefined,
@@ -264,6 +289,11 @@ chrome.runtime.onMessage.addListener(
 				return false;
 			}
 			handleListSessions(baseUrl, capabilityToken).then(sendResponse);
+			return true;
+		}
+
+		if (message.type === "omp:get-sessions") {
+			handleGetSessions().then(sendResponse);
 			return true;
 		}
 
