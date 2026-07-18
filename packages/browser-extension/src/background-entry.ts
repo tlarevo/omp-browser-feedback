@@ -144,12 +144,66 @@ async function detectComponent(
 	} catch {
 		return null;
 	}
+interface AnnotatorImageMessage {
+	imageDataUrl: string;
+	imageWidth: number;
+	imageHeight: number;
+	event: BrowserFeedbackEvent;
+}
+
+interface AnnotatorConfirmedMessage {
+	type: "omp:annotator-confirmed";
+	annotatedImageDataUrl: string | null;
+	annotations: unknown[];
+}
+
+function blobToDataUrl(blob: Blob): Promise<string> {
+	const { promise, resolve, reject } = Promise.withResolvers<string>();
+	const reader = new FileReader();
+	reader.onloadend = () => resolve(reader.result as string);
+	reader.onerror = () => reject(reader.error);
+	reader.readAsDataURL(blob);
+	return promise;
+}
+
+function showAnnotatorInTab(
+	tabId: number,
+	message: AnnotatorImageMessage,
+): Promise<{ annotatedBlob: Blob; annotations: unknown[] } | null> {
+	const { promise, resolve } = Promise.withResolvers<{
+		annotatedBlob: Blob;
+		annotations: unknown[];
+	} | null>();
+
+	function onAnnotatorConfirmed(response: unknown) {
+		chrome.runtime.onMessage.removeListener(onAnnotatorConfirmed);
+		const msg = response as AnnotatorConfirmedMessage | undefined;
+		if (msg?.type !== "omp:annotator-confirmed") {
+			resolve(null);
+			return;
+		}
+		if (!msg.annotatedImageDataUrl) {
+			resolve(null);
+			return;
+		}
+		// Convert annotated data URL back to Blob
+		fetch(msg.annotatedImageDataUrl)
+			.then((r) => r.blob())
+			.then((blob) =>
+				resolve({ annotatedBlob: blob, annotations: msg.annotations }),
+			)
+			.catch(() => resolve(null));
+	}
+
+	chrome.runtime.onMessage.addListener(onAnnotatorConfirmed);
+	chrome.tabs.sendMessage(tabId, { type: "omp:show-annotator", ...message });
+	return promise;
 }
 
 async function handleElementSelected(
 	event: BrowserFeedbackEvent,
 	windowId: number | undefined,
-	tabId: number | undefined,
+	tabId: number,
 ): Promise<MessageResponse<void>> {
 	try {
 		const stored = await chrome.storage.local.get([
@@ -518,6 +572,32 @@ async function handleRegionSelected(
 			}
 		}
 
+		// Show annotation canvas if we have a screenshot and a target tab
+		if (screenshot && tabId >= 0) {
+			const dataUrl = await blobToDataUrl(screenshot);
+			const width =
+				eventToSubmit.type === "dom.selection"
+					? (eventToSubmit.screenshot?.width ?? 0)
+					: eventToSubmit.screenshot.width;
+			const height =
+				eventToSubmit.type === "dom.selection"
+					? (eventToSubmit.screenshot?.height ?? 0)
+					: eventToSubmit.screenshot.height;
+
+			const annotatorResult = await showAnnotatorInTab(tabId, {
+				imageDataUrl: dataUrl,
+				imageWidth: width,
+				imageHeight: height,
+				event: eventToSubmit,
+			});
+
+			// If user annotated, use the flattened image
+			if (annotatorResult) {
+				screenshot = annotatorResult.annotatedBlob;
+			}
+			// If annotatorResult is null, user sent without annotations — use original
+		}
+
 		await submitFeedback({
 			baseUrl,
 			capabilityToken,
@@ -851,150 +931,12 @@ chrome.runtime.onMessage.addListener(
 			}
 			const windowId = sender.tab?.windowId;
 			const tabId = sender.tab?.id;
+			const tabId = sender.tab?.id ?? -1;
 			handleElementSelected(
 				event as BrowserFeedbackEvent,
 				windowId,
 				tabId,
 			).then(sendResponse);
-			return true;
-		}
-		if (message.type === "omp:add-to-basket") {
-			const event = message.event as DomSelectionFeedback | undefined;
-			const note = typeof message.note === "string" ? message.note : "";
-			if (!event) {
-				sendResponse({ ok: false, error: "Missing feedback event" });
-				return false;
-			}
-			addToBasket(event, note).then(sendResponse);
-			return true;
-		}
-
-		if (message.type === "omp:get-basket") {
-			getBasket().then(sendResponse);
-			return true;
-		}
-
-		if (message.type === "omp:remove-from-basket") {
-			const itemId = typeof message.itemId === "string" ? message.itemId : "";
-			removeFromBasket(itemId).then(sendResponse);
-			return true;
-		}
-
-		if (message.type === "omp:clear-basket") {
-			clearBasket().then(sendResponse);
-			return true;
-		}
-
-		if (message.type === "omp:submit-batch") {
-			const windowId = sender.tab?.windowId;
-			submitBatch(windowId).then(sendResponse);
-			return true;
-		}
-
-		if (message.type === "omp:region-selected") {
-			const event = message.event;
-			const region = message.region;
-			if (!event || !region) {
-				sendResponse({ ok: false, error: "Missing feedback event or region" });
-				return false;
-			}
-			const windowId = sender.tab?.windowId;
-			handleRegionSelected(
-				event as BrowserFeedbackEvent,
-				windowId,
-				region as { x: number; y: number; width: number; height: number },
-			).then(sendResponse);
-			return true;
-		}
-		if (message.type === "omp:start-fullpage-capture") {
-			const channelId =
-				typeof message.channelId === "string" ? message.channelId : undefined;
-			const baseUrl =
-				typeof message.baseUrl === "string" ? message.baseUrl : undefined;
-			const capabilityToken =
-				typeof message.capabilityToken === "string"
-					? message.capabilityToken
-					: undefined;
-			const note = typeof message.note === "string" ? message.note : undefined;
-			if (!channelId || !baseUrl || !capabilityToken) {
-				sendResponse({ ok: false, error: "Missing fullpage capture context" });
-				return false;
-			}
-			const tabId = sender.tab?.id ?? -1;
-			const windowId = sender.tab?.windowId;
-			if (tabId === -1 || !windowId) {
-				chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-					const activeTab = tabs[0];
-					if (!activeTab?.id || !activeTab.windowId) {
-						sendResponse({ ok: false, error: "No active tab" });
-						return;
-					}
-					setStorage({ brokerBaseUrl: baseUrl })
-						.then(() =>
-							handleStartFullpageCapture(
-								activeTab.id!,
-								activeTab.windowId!,
-								channelId,
-								baseUrl,
-								capabilityToken,
-								note,
-							),
-						)
-						.then(sendResponse)
-						.catch((error) =>
-							sendResponse({ ok: false, error: String(error) }),
-						);
-				});
-				return true;
-			}
-			setStorage({ brokerBaseUrl: baseUrl })
-				.then(() =>
-					handleStartFullpageCapture(
-						tabId,
-						windowId,
-						channelId,
-						baseUrl,
-						capabilityToken,
-						note,
-					),
-				)
-				.then(sendResponse)
-				.catch((error) => sendResponse({ ok: false, error: String(error) }));
-			return true;
-		}
-
-		if (message.type === "omp:get-capture-status") {
-			handleGetCaptureStatus().then(sendResponse);
-			return true;
-		}
-
-		if (message.type === "omp:cancel-fullpage-capture") {
-			handleCancelCapture();
-			sendResponse({ ok: true });
-			return false;
-		}
-
-		if (message.type === "omp:get-console-consent") {
-			const origin =
-				typeof message.origin === "string" ? message.origin : undefined;
-			if (!origin) {
-				sendResponse({ ok: false, error: "Missing origin" });
-				return false;
-			}
-			handleGetConsoleConsent(origin).then(sendResponse);
-			return true;
-		}
-
-		if (message.type === "omp:set-console-consent") {
-			const origin =
-				typeof message.origin === "string" ? message.origin : undefined;
-			const enabled =
-				typeof message.enabled === "boolean" ? message.enabled : undefined;
-			if (!origin || enabled === undefined) {
-				sendResponse({ ok: false, error: "Missing origin or enabled" });
-				return false;
-			}
-			handleSetConsoleConsent(origin, enabled).then(sendResponse);
 			return true;
 		}
 
