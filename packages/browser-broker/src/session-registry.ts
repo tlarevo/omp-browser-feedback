@@ -48,7 +48,8 @@ export class BrowserSessionRegistry {
 
 	constructor(options: BrowserSessionRegistryOptions = {}) {
 		this.#now = options.now ?? (() => new Date().toISOString());
-		this.#heartbeatTimeoutMs = options.heartbeatTimeoutMs ?? HEARTBEAT_TIMEOUT_MS;
+		this.#heartbeatTimeoutMs =
+			options.heartbeatTimeoutMs ?? HEARTBEAT_TIMEOUT_MS;
 		this.#idleAfterMs = options.idleAfterMs ?? IDLE_AFTER_MS;
 		this.#graceMs = options.graceMs ?? DISCONNECT_GRACE_MS;
 	}

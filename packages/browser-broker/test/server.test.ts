@@ -339,3 +339,173 @@ describe("browser broker server", () => {
 		expect(response.status).toBe(401);
 	});
 });
+function wsUrl(
+	server: { baseUrl: string },
+	sessionId: string,
+	token = "secret",
+) {
+	const base = server.baseUrl.replace("http", "ws");
+	return `${base}/ws/omp/${encodeURIComponent(sessionId)}?token=${token}`;
+}
+
+function waitForOpen(ws: WebSocket): Promise<void> {
+	const { promise, resolve, reject } = Promise.withResolvers<void>();
+	ws.addEventListener("open", () => resolve(), { once: true });
+	ws.addEventListener("error", (e) => reject(e), { once: true });
+	return promise;
+}
+
+function waitForClose(ws: WebSocket): Promise<number> {
+	const { promise, resolve } = Promise.withResolvers<number>();
+	ws.addEventListener("close", (e) => resolve(e.code), { once: true });
+	return promise;
+}
+
+async function listSessions(server: {
+	baseUrl: string;
+}): Promise<Array<{ sessionId: string; presence: string }>> {
+	const res = (await (
+		await fetch(`${server.baseUrl}/api/sessions`, {
+			headers: rootJsonHeaders,
+		})
+	).json()) as { sessions: Array<{ sessionId: string; presence: string }> };
+	return res.sessions;
+}
+
+describe("websocket heartbeat and reconnect", () => {
+	test("native pong keeps session active", async () => {
+		const server = await createServer();
+		await registerSession(server);
+
+		const ws = new WebSocket(wsUrl(server, "ses_1"));
+		await waitForOpen(ws);
+
+		// Server sends pings at 15s intervals; Bun auto-pongs.
+		// Presence should remain active while the socket is open.
+		const sessions = await listSessions(server);
+		expect(sessions[0]?.presence).toBe("active");
+
+		ws.close();
+		await waitForClose(ws);
+	});
+
+	test("socket close marks session disconnected", async () => {
+		const server = await createServer();
+		await registerSession(server);
+
+		const ws = new WebSocket(wsUrl(server, "ses_1"));
+		await waitForOpen(ws);
+		ws.close();
+		await waitForClose(ws);
+
+		const sessions = await listSessions(server);
+		expect(sessions[0]?.presence).toBe("disconnected");
+	});
+
+	test("reconnect restores same session id", async () => {
+		const server = await createServer();
+		await registerSession(server);
+
+		// First connection then close
+		const ws1 = new WebSocket(wsUrl(server, "ses_1"));
+		await waitForOpen(ws1);
+		ws1.close();
+		await waitForClose(ws1);
+
+		// Reconnect with same session id
+		const ws2 = new WebSocket(wsUrl(server, "ses_1"));
+		await waitForOpen(ws2);
+
+		const sessions = await listSessions(server);
+		expect(sessions).toHaveLength(1);
+		expect(sessions[0]?.sessionId).toBe("ses_1");
+		expect(sessions[0]?.presence).toBe("active");
+
+		ws2.close();
+		await waitForClose(ws2);
+	});
+
+	test("feedback to disconnected session returns queued: true", async () => {
+		const server = await createServer();
+		await registerSession(server);
+
+		// Connect then disconnect
+		const ws = new WebSocket(wsUrl(server, "ses_1"));
+		await waitForOpen(ws);
+		ws.close();
+		await waitForClose(ws);
+
+		// Send feedback to the disconnected session
+		const response = (await (
+			await fetch(`${server.baseUrl}/api/feedback`, {
+				method: "POST",
+				headers: rootJsonHeaders,
+				body: JSON.stringify({
+					protocolVersion: BROWSER_PROTOCOL_VERSION,
+					eventId: "evt_q1",
+					type: "dom.selection",
+					channelId: "ses_1",
+					createdAt: "2026-07-18T10:00:00.000Z",
+					page: {
+						url: "https://example.com",
+						title: "Example",
+						viewport: {
+							width: 1200,
+							height: 800,
+							devicePixelRatio: 2,
+						},
+					},
+					element: {
+						selector: "button",
+						tagName: "BUTTON",
+						outerHtml: "<button>Save</button>",
+						attributes: {},
+						bounds: { x: 1, y: 2, width: 3, height: 4 },
+						computedStyles: { display: "block" },
+					},
+				}),
+			})
+		).json()) as {
+			ok: boolean;
+			eventId: string;
+			queued: boolean;
+			presence: string;
+		};
+
+		expect(response.ok).toBe(true);
+		expect(response.queued).toBe(true);
+		expect(response.presence).toBe("disconnected");
+	});
+	test("v1 client stays active via native pong without heartbeat frames", async () => {
+		const server = await createServer();
+
+		// Register a v1 session — no custom heartbeat frames
+		await fetch(`${server.baseUrl}/api/sessions/register`, {
+			method: "POST",
+			headers: rootJsonHeaders,
+			body: JSON.stringify({
+				protocolVersion: 1,
+				sessionId: "v1_ses",
+				channelId: "v1_ses",
+				sessionName: "V1 Session",
+				displayName: "V1 Session",
+				cwd: "/repo",
+				status: "active",
+				lastActiveAt: "2026-07-18T10:00:00.000Z",
+				processId: 1,
+			}),
+		});
+
+		// v1 client opens WebSocket — server pings, runtime auto-pongs
+		const ws = new WebSocket(wsUrl(server, "v1_ses"));
+		await waitForOpen(ws);
+
+		const sessions = await listSessions(server);
+		const v1 = sessions.find((s) => s.sessionId === "v1_ses");
+		expect(v1).toBeDefined();
+		expect(v1?.presence).toBe("active");
+
+		ws.close();
+		await waitForClose(ws);
+	});
+});
