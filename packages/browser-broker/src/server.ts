@@ -27,6 +27,10 @@ export interface BrowserBrokerServerOptions {
 	pairingRegistryPath?: string;
 	screenshotRootDir?: string;
 	maxScreenshotBytes?: number;
+	heartbeatIntervalMs?: number;
+	heartbeatTimeoutMs?: number;
+	idleAfterMs?: number;
+	graceMs?: number;
 }
 
 export interface BrowserBrokerServer {
@@ -117,7 +121,15 @@ export async function createBrowserBrokerServer(
 		throw new Error("Browser broker only supports loopback hosts by default");
 	}
 
-	const registry = new BrowserSessionRegistry();
+	const registry = new BrowserSessionRegistry({
+		...(options.heartbeatTimeoutMs !== undefined
+			? { heartbeatTimeoutMs: options.heartbeatTimeoutMs }
+			: {}),
+		...(options.idleAfterMs !== undefined
+			? { idleAfterMs: options.idleAfterMs }
+			: {}),
+		...(options.graceMs !== undefined ? { graceMs: options.graceMs } : {}),
+	});
 	const feedback = new InMemoryFeedbackStore({
 		maxEventsPerChannel: options.maxEventsPerChannel ?? 50,
 	});
@@ -138,6 +150,7 @@ export async function createBrowserBrokerServer(
 		port,
 		async fetch(request): Promise<Response | undefined> {
 			const url = new URL(request.url);
+			registry.prune();
 
 			const wsOmpMatch = url.pathname.match(/^\/ws\/omp\/([^/]+)$/);
 			if (wsOmpMatch) {
@@ -354,8 +367,17 @@ export async function createBrowserBrokerServer(
 					payload: result.value,
 				});
 				const session = registry.getByChannelId(result.value.channelId);
-				if (session) websockets.sendFeedback(session.sessionId, result.value);
-				return jsonResponse({ ok: true, eventId: result.value.eventId });
+				if (!session)
+					return jsonResponse({ ok: true, eventId: result.value.eventId });
+				const presence = registry.presenceOf(session.sessionId);
+				if (presence !== "disconnected")
+					websockets.sendFeedback(session.sessionId, result.value);
+				return jsonResponse({
+					ok: true,
+					eventId: result.value.eventId,
+					queued: presence === "disconnected",
+					presence,
+				});
 			}
 
 			if (!rootAuthorized) {
@@ -456,12 +478,10 @@ export async function createBrowserBrokerServer(
 			);
 		},
 		websocket: {
+			sendPings: false,
 			open(socket) {
 				websockets.add(socket);
-				const session = registry.update(socket.data.sessionId, {
-					status: "active",
-					lastActiveAt: new Date().toISOString(),
-				});
+				const session = registry.markConnected(socket.data.sessionId);
 				if (!session) return;
 				for (const event of feedback.list(session.channelId)) {
 					if (event.payload)
@@ -473,11 +493,22 @@ export async function createBrowserBrokerServer(
 			},
 			close(socket) {
 				websockets.remove(socket);
-				registry.markDisconnected(socket.data.sessionId);
+				if (!websockets.hasSession(socket.data.sessionId))
+					registry.markDisconnected(socket.data.sessionId);
+			},
+			pong(socket) {
+				registry.recordPong(socket.data.sessionId);
 			},
 			message() {},
 		},
 	});
+
+	const heartbeatIntervalMs = options.heartbeatIntervalMs ?? 15_000;
+	const heartbeat = setInterval(() => {
+		websockets.pingAll();
+		registry.prune();
+	}, heartbeatIntervalMs);
+	heartbeat.unref?.();
 
 	return {
 		baseUrl: `http://${options.host}:${port}`,
@@ -488,6 +519,7 @@ export async function createBrowserBrokerServer(
 		screenshots,
 		websockets,
 		stop() {
+			clearInterval(heartbeat);
 			server.stop(true);
 		},
 	};
