@@ -91,10 +91,8 @@ export interface PopupActionHandlers {
 	onSelectSession?: (sessionId: string) => void;
 	onStartPicker?: (sessionId: string, note?: string) => void;
 	onToggleConsoleCapture?: (enabled: boolean) => void;
-=======
 	onRefresh?: () => void;
 	onForget?: () => void;
->>>>>>> tharinduabeydeera/tha-125-extension-icons-connection-badge-and-popup-rework-loading
 }
 
 function clear(element: HTMLElement): void {

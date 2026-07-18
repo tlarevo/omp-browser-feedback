@@ -81,8 +81,6 @@ const screenshotSchema = type({
 	height: "number",
 	"downscaled?": "boolean",
 });
-<<<<<<< HEAD
-=======
 const consoleEntrySchema = type({
 	"+": "reject",
 	timestamp: nonEmptyString,
@@ -134,4 +132,3 @@ export const batchFeedbackSchema = type({
 export const browserFeedbackEventSchema = domSelectionFeedbackSchema
 	.or(pageScreenshotFeedbackSchema)
 	.or(batchFeedbackSchema);
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and

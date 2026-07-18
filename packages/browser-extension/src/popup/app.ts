@@ -302,7 +302,6 @@ async function initPopup(): Promise<void> {
 					// invalid URL, ignore
 				}
 			}
-=======
 
 		async onRefresh() {
 			await refreshFromBroker();
@@ -314,7 +313,6 @@ async function initPopup(): Promise<void> {
 			currentSelectedId = undefined;
 			currentSessions = [];
 			render({ kind: "unpaired", baseUrl: currentBaseUrl });
->>>>>>> tharinduabeydeera/tha-125-extension-icons-connection-badge-and-popup-rework-loading
 		},
 	};
 	// If background wrote a pickerHint (e.g. shortcut fired with no session),

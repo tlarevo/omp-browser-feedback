@@ -1,9 +1,4 @@
 import { type Type, type } from "arktype";
-<<<<<<< HEAD
-import { BROWSER_FEEDBACK_LIMITS, codePointLength } from "./limits";
-import type {
-	BrowserFeedbackAck,
-=======
 import { BATCH_FEEDBACK_LIMITS } from "./limits";
 import {
 	batchFeedbackSchema,
@@ -12,7 +7,6 @@ import {
 } from "./schemas";
 import type {
 	BatchFeedback,
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 	BrowserFeedbackEvent,
 	BrowserProtocolVersion,
 	BrowserSessionRegistration,
