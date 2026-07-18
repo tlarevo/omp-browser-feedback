@@ -76,7 +76,6 @@ export interface BrowserElementContext {
 	bounds: BrowserElementBounds;
 	computedStyles: Record<string, string>;
 	accessibility?: BrowserAccessibilityContext;
-<<<<<<< HEAD
 	selectorSegments?: SelectorSegment[];
 	shadowRoot?: boolean;
 	component?: BrowserComponentContext;
