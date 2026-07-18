@@ -27,7 +27,7 @@ async function createServer() {
 		host: "127.0.0.1",
 		port: 0,
 		authToken: "secret",
-		deliveryPath: path.join(dir, `delivery-${_fileIdx++}.json`),
+		dataDir: path.join(dir, `feedback-data-${_fileIdx++}`),
 	});
 	servers.push(server);
 	return server;

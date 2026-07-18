@@ -56,6 +56,9 @@ export function defaultPairingRegistryPath(): string {
 export function defaultDeliveryPath(): string {
 	return path.join(os.homedir(), ".omp", "browser-feedback-delivery.json");
 }
+export function defaultFeedbackDataDir(): string {
+	return path.join(os.homedir(), ".omp", "browser-feedback-data");
+}
 
 export function resolveBrokerPorts(options: BrokerPortOptions = {}): number[] {
 	if (options.port !== undefined) return [options.port];

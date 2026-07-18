@@ -15,8 +15,9 @@ import {
 } from "@oh-my-pi/browser-protocol";
 import type { Server } from "bun";
 import { isAuthorizedBrowserRequest, isAuthorizedRequest } from "./auth";
-import { defaultDeliveryPath, defaultPairingRegistryPath } from "./discovery";
+import { defaultFeedbackDataDir, defaultPairingRegistryPath } from "./discovery";
 import { InMemoryFeedbackStore } from "./feedback-store";
+import { JournalStore } from "./journal";
 import { createPairingStore } from "./pairing-store";
 import { BrowserScreenshotStore } from "./screenshots";
 import { BrowserSessionRegistry } from "./session-registry";
@@ -33,8 +34,8 @@ export interface BrowserBrokerServerOptions {
 	pairingRegistryPath?: string;
 	screenshotRootDir?: string;
 	maxScreenshotBytes?: number;
-	/** Path for durable pending-event persistence. */
-	deliveryPath?: string;
+	/** Directory for journal persistence and screenshot storage. */
+	dataDir?: string;
 }
 
 export interface BrowserBrokerServer {
@@ -131,12 +132,20 @@ export async function createBrowserBrokerServer(
 	}
 
 	const registry = new BrowserSessionRegistry();
+	const dataDir = options.dataDir ?? defaultFeedbackDataDir();
+	const journal = new JournalStore(dataDir, {
+		maxEventsPerChannel: options.maxEventsPerChannel ?? 200,
+		maxTotalBytes: 50 * 1024 * 1024,
+		maxAgeMs: 7 * 24 * 60 * 60 * 1000,
+	});
+	journal.load();
+	const screenshotDir = options.screenshotRootDir ?? `${dataDir}/screenshots`;
 	const feedback = new InMemoryFeedbackStore({
-		maxEventsPerChannel: options.maxEventsPerChannel ?? 50,
-		deliveryPath: options.deliveryPath ?? defaultDeliveryPath(),
+		journal,
+		screenshotRootDir: screenshotDir,
 	});
 	const screenshots = new BrowserScreenshotStore({
-		rootDir: options.screenshotRootDir ?? "/tmp/omp-browser-screenshots",
+		rootDir: screenshotDir,
 		maxBytes:
 			options.maxScreenshotBytes ?? BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes,
 	});
@@ -396,7 +405,7 @@ export async function createBrowserBrokerServer(
 					wirePayload = v1Result.value;
 				}
 				// Store the original event (tracks eventId for ACK matching).
-				feedback.add({
+				await feedback.add({
 					channelId: result.value.channelId,
 					eventId: result.value.eventId,
 					createdAt: result.value.createdAt,
@@ -410,7 +419,7 @@ export async function createBrowserBrokerServer(
 					// v1 legacy: mark-on-send (not crash-safe).
 					// v2: remains pending until ACK from OMP.
 					if (session.negotiatedProtocolVersion === 1) {
-						feedback.markDelivered(session.channelId, result.value.eventId);
+						await feedback.markDelivered(session.channelId, result.value.eventId);
 					}
 				}
 				return jsonResponse({ ok: true, eventId: result.value.eventId });
@@ -568,7 +577,7 @@ export async function createBrowserBrokerServer(
 					// v1 legacy: mark-on-send (not crash-safe).
 					// v2: stays pending until ACK.
 					if (session.negotiatedProtocolVersion === 1) {
-						feedback.markDelivered(session.channelId, stored.eventId);
+						void feedback.markDelivered(session.channelId, stored.eventId);
 					}
 				}
 			},
@@ -576,8 +585,7 @@ export async function createBrowserBrokerServer(
 				websockets.remove(socket);
 				registry.markDisconnected(socket.data.sessionId);
 			},
-			message(socket, data) {
-				let msg: unknown;
+			async message(socket, data) {
 				try {
 					msg = JSON.parse(String(data));
 				} catch {
@@ -589,7 +597,7 @@ export async function createBrowserBrokerServer(
 				if (!session) return;
 				// Only v2 sessions send ACKs; ignore from v1.
 				if (session.negotiatedProtocolVersion < 2) return;
-				feedback.markDelivered(session.channelId, ack.value.eventId);
+				await feedback.markDelivered(session.channelId, ack.value.eventId);
 			},
 		},
 	});
