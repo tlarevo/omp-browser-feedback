@@ -1,78 +1,239 @@
-const PREFERRED_ATTRIBUTES = [
+// Selector priority (highest first):
+//   1. test attributes        (data-testid, data-test, ...)
+//   2. stable unique id        (#id, duplicate ids rejected via uniqueness)
+//   3. accessible attributes   (aria-label, alt)
+//   4. stable semantic attrs   (name, type, href) and semantic classes
+//   5. ancestor qualification  (tag/class path)
+//   6. positional fallback     (nth-of-type path)
+// Every accepted selector is verified unique against the element's root.
+
+const TEST_ATTRIBUTES = [
 	"data-testid",
 	"data-test",
-	"aria-label",
-	"name",
-	"type",
-	"href",
+	"data-test-id",
+	"data-qa",
+	"data-cy",
 ] as const;
+
+const ACCESSIBLE_ATTRIBUTES = ["aria-label", "alt"] as const;
+
+const SEMANTIC_ATTRIBUTES = ["name", "type", "href"] as const;
+
+// Deterministic bounds so pathological markup can never blow up a selector.
+const MAX_ANCESTOR_DEPTH = 8;
+const MAX_SELECTOR_LENGTH = 512;
+
+// Standard CSS.escape algorithm, used when the platform does not expose CSS.escape
+// (e.g. under linkedom in tests). Escaping an identifier (id/class), not a string.
+function escapeIdentifier(value: string): string {
+	let result = "";
+	for (let i = 0; i < value.length; i++) {
+		const code = value.charCodeAt(i);
+		if (code === 0) {
+			result += "\uFFFD";
+		} else if (
+			(code >= 0x1 && code <= 0x1f) ||
+			code === 0x7f ||
+			(i === 0 && code >= 0x30 && code <= 0x39) ||
+			(i === 1 && code >= 0x30 && code <= 0x39 && value.charCodeAt(0) === 0x2d)
+		) {
+			result += `\\${code.toString(16)} `;
+		} else if (i === 0 && code === 0x2d && value.length === 1) {
+			result += `\\${value[i]}`;
+		} else if (
+			code >= 0x80 ||
+			code === 0x2d ||
+			code === 0x5f ||
+			(code >= 0x30 && code <= 0x39) ||
+			(code >= 0x41 && code <= 0x5a) ||
+			(code >= 0x61 && code <= 0x7a)
+		) {
+			result += value[i];
+		} else {
+			result += `\\${value[i]}`;
+		}
+	}
+	return result;
+}
 
 function cssEscape(value: string): string {
 	if (typeof CSS !== "undefined" && CSS.escape) return CSS.escape(value);
-	return value.replace(/["\\]/g, "\\$&");
+	return escapeIdentifier(value);
 }
 
 function quotedAttributeSelector(name: string, value: string): string {
-	return `[${name}="${cssEscape(value)}"]`;
+	// Attribute values are quoted, so only quotes/backslashes need escaping.
+	return `[${name}="${value.replace(/["\\]/g, "\\$&")}"]`;
 }
 
-function ownerDocument(element: Element): Document | undefined {
+// Uniqueness is verified against the element's own root (document or shadow root),
+// so shadow-scoped selectors are validated inside their shadow tree.
+function searchRoot(element: Element): Document | ShadowRoot | undefined {
+	const root = element.getRootNode?.();
+	if (root && (root as ShadowRoot).host) return root as ShadowRoot;
 	return element.ownerDocument ?? globalThis.document;
 }
 
 function isUnique(element: Element, selector: string): boolean {
-	const document = ownerDocument(element);
-	if (!document) return false;
+	const root = searchRoot(element);
+	if (!root) return false;
 	try {
-		const matches = document.querySelectorAll(selector);
+		const matches = root.querySelectorAll(selector);
 		return matches.length === 1 && matches[0] === element;
 	} catch {
 		return false;
 	}
 }
 
-function stableAttributeSelector(element: Element): string | undefined {
-	for (const attribute of PREFERRED_ATTRIBUTES) {
-		const value = element.getAttribute(attribute);
-		if (!value) continue;
-		const selector = quotedAttributeSelector(attribute, value);
-		if (isUnique(element, selector)) return selector;
+// Hash-like / framework-generated class names carry no stable meaning.
+function isGeneratedClass(cls: string): boolean {
+	// CSS-in-JS: emotion (css-1a2b3c), styled-components (sc-bdVaJa), styled-jsx.
+	if (/^(css|sc|jsx|emotion)-[0-9a-z]+$/i.test(cls)) return true;
+	// CSS Modules hash suffix: Button__3xY9z, styles_container__a1b2c.
+	if (/__[0-9a-z]{4,}$/i.test(cls)) return true;
+	// Pure hex/hash token.
+	if (/^[0-9a-f]{6,}$/i.test(cls)) return true;
+	// Mixed alnum single run that looks random (letters + digits, long, digit run).
+	if (
+		cls.length >= 7 &&
+		/^[a-z0-9_]+$/i.test(cls) &&
+		/[a-z]/i.test(cls) &&
+		/\d{2,}/.test(cls) &&
+		/(?:\d[a-z]|[a-z]\d)/i.test(cls)
+	) {
+		return true;
 	}
-	return undefined;
+	return false;
 }
 
-function stableIdSelector(element: Element): string | undefined {
+// Utility/atomic classes (Tailwind, Bootstrap spacing, etc.) are presentational noise.
+function isUtilityClass(cls: string): boolean {
+	if (
+		/^(flex|grid|block|inline|inline-block|hidden|container|row|clearfix|sr-only)$/.test(
+			cls,
+		)
+	) {
+		return true;
+	}
+	// Spacing/sizing/color atoms: px-4, mt-2, m-0, w-1, gap-2, text-sm, bg-blue-500.
+	if (
+		/^(p|m|px|py|pt|pb|pl|pr|mx|my|mt|mb|ml|mr|w|h|min-w|min-h|max-w|max-h|gap|space|text|bg|border|rounded|shadow|font|leading|tracking|z|top|left|right|bottom|inset|order|basis|grow|shrink|col|columns|opacity|cursor|overflow|justify|items|content|self|place)-[a-z0-9/-]+$/.test(
+			cls,
+		)
+	) {
+		return true;
+	}
+	// Responsive/state variants: md:flex, hover:bg-blue-500, dark:text-white.
+	if (
+		/^(sm|md|lg|xl|2xl|hover|focus|active|dark|group|first|last):/.test(cls)
+	) {
+		return true;
+	}
+	return false;
+}
+
+function classList(element: Element): string[] {
+	const list = element.classList;
+	if (list) return Array.from(list);
+	// SVG className is an SVGAnimatedString, not a string — read the attribute.
+	const raw = element.getAttribute("class");
+	return raw ? raw.trim().split(/\s+/) : [];
+}
+
+function stableClasses(element: Element): string[] {
+	return classList(element).filter(
+		(cls) => cls && !isGeneratedClass(cls) && !isUtilityClass(cls),
+	);
+}
+
+function tagName(element: Element): string {
+	// localName preserves case for SVG (e.g. linearGradient) unlike tagName.
+	return element.localName;
+}
+
+// Ordered standalone candidates for an element, highest priority first.
+function* standaloneCandidates(element: Element): Generator<string> {
+	for (const attribute of TEST_ATTRIBUTES) {
+		const value = element.getAttribute(attribute);
+		if (value) yield quotedAttributeSelector(attribute, value);
+	}
+
 	const id = element.id;
-	if (!id || /[:\s]/.test(id)) return undefined;
-	const selector = `#${cssEscape(id)}`;
-	return isUnique(element, selector) ? selector : undefined;
+	if (id && !/\s/.test(id) && !isGeneratedClass(id)) {
+		yield `#${cssEscape(id)}`;
+	}
+
+	for (const attribute of ACCESSIBLE_ATTRIBUTES) {
+		const value = element.getAttribute(attribute);
+		if (value) yield quotedAttributeSelector(attribute, value);
+	}
+
+	for (const attribute of SEMANTIC_ATTRIBUTES) {
+		const value = element.getAttribute(attribute);
+		if (value) yield quotedAttributeSelector(attribute, value);
+	}
+
+	for (const cls of stableClasses(element)) {
+		yield `.${cssEscape(cls)}`;
+	}
 }
 
-function nthOfTypeSelector(element: Element): string {
-	const tag = element.tagName.toLowerCase();
+// Best non-positional descriptor for a node inside a path: tag qualified by one
+// stable class when available, otherwise the bare tag.
+function localPart(element: Element): string {
+	const [cls] = stableClasses(element);
+	const tag = tagName(element);
+	return cls ? `${tag}.${cssEscape(cls)}` : tag;
+}
+
+function nthOfType(element: Element): string {
+	const tag = tagName(element);
 	let index = 1;
+	let siblingsOfType = 1;
 	let sibling = element.previousElementSibling;
 	while (sibling) {
-		if (sibling.tagName === element.tagName) index++;
+		if (sibling.localName === element.localName) index++;
 		sibling = sibling.previousElementSibling;
 	}
-	return index === 1 ? tag : `${tag}:nth-of-type(${index})`;
+	siblingsOfType = index;
+	let after = element.nextElementSibling;
+	while (after) {
+		if (after.localName === element.localName) siblingsOfType++;
+		after = after.nextElementSibling;
+	}
+	// A bare tag only disambiguates when this element is the sole one of its type.
+	return siblingsOfType === 1 ? tag : `${tag}:nth-of-type(${index})`;
+}
+
+// Walk ancestors combining `part(node)` per level, returning the first unique
+// path within the depth/length bounds, else the bounded best effort.
+function buildPath(element: Element, part: (node: Element) => string): string {
+	const parts: string[] = [];
+	let current: Element | null = element;
+	let depth = 0;
+	while (current && tagName(current) !== "html" && depth < MAX_ANCESTOR_DEPTH) {
+		parts.unshift(part(current));
+		const selector = parts.join(" > ");
+		if (selector.length > MAX_SELECTOR_LENGTH) {
+			parts.shift();
+			break;
+		}
+		if (isUnique(element, selector)) return selector;
+		current = current.parentElement;
+		depth++;
+	}
+	return parts.join(" > ");
 }
 
 export function generateSelector(element: Element): string {
-	const stableAttribute = stableAttributeSelector(element);
-	if (stableAttribute) return stableAttribute;
-
-	const idSelector = stableIdSelector(element);
-	if (idSelector) return idSelector;
-
-	const parts: string[] = [];
-	let current: Element | null = element;
-	while (current && current.tagName.toLowerCase() !== "html") {
-		parts.unshift(nthOfTypeSelector(current));
-		const selector = parts.join(" > ");
-		if (isUnique(element, selector)) return selector;
-		current = current.parentElement;
+	for (const candidate of standaloneCandidates(element)) {
+		if (isUnique(element, candidate)) return candidate;
 	}
-	return parts.join(" > ");
+
+	// Ancestor qualification with stable descriptors.
+	const semanticPath = buildPath(element, localPart);
+	if (isUnique(element, semanticPath)) return semanticPath;
+
+	// Positional fallback.
+	return buildPath(element, nthOfType);
 }
