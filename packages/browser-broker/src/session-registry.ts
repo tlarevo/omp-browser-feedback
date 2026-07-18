@@ -1,4 +1,5 @@
 import type {
+	BrowserProtocolVersion,
 	BrowserSessionRegistration,
 	BrowserSessionStatus,
 } from "@oh-my-pi/browser-protocol";
@@ -8,6 +9,8 @@ export interface BrowserSessionRegistryOptions {
 }
 
 export interface BrowserSessionRecord extends BrowserSessionRegistration {
+	/** Negotiated protocol version for this session. */
+	negotiatedProtocolVersion: BrowserProtocolVersion;
 	registeredAt: string;
 	updatedAt: string;
 }
@@ -32,11 +35,15 @@ export class BrowserSessionRegistry {
 		this.#now = options.now ?? (() => new Date().toISOString());
 	}
 
-	register(registration: BrowserSessionRegistration): BrowserSessionRecord {
+	register(
+		registration: BrowserSessionRegistration,
+		negotiatedVersion: BrowserProtocolVersion,
+	): BrowserSessionRecord {
 		const timestamp = this.#now();
 		const existing = this.#sessions.get(registration.sessionId);
 		const record: BrowserSessionRecord = {
 			...registration,
+			negotiatedProtocolVersion: negotiatedVersion,
 			registeredAt: existing?.registeredAt ?? timestamp,
 			updatedAt: timestamp,
 		};

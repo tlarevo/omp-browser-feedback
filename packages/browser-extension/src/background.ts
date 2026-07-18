@@ -1,6 +1,6 @@
 import {
 	BROWSER_BROKER_SERVICE,
-	BROWSER_PROTOCOL_VERSION,
+	BROWSER_PROTOCOL_VERSIONS,
 	type BrowserFeedbackEvent,
 	type BrowserSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
@@ -8,6 +8,8 @@ import {
 export interface BrokerHealth {
 	service: string;
 	protocol_version: number;
+	minProtocolVersion?: number;
+	protocolVersion?: number;
 	broker_id: string;
 }
 
@@ -95,7 +97,18 @@ export async function probeBroker(
 		if (!response.ok) return undefined;
 		const health = (await response.json()) as BrokerHealth;
 		if (health.service !== BROWSER_BROKER_SERVICE) return undefined;
-		if (health.protocol_version !== BROWSER_PROTOCOL_VERSION) return undefined;
+		// Overlap-based compatibility: the broker's version range must share
+		// at least one version with Chrome's supported range.
+		// Treat a v1 broker (no min/protocolVersion fields) as [1, 1].
+		const remoteMin = health.minProtocolVersion ?? health.protocol_version;
+		const remoteMax = health.protocolVersion ?? health.protocol_version;
+		// This Chrome producer is v2-only: its generated range is [2, 2].
+		const localMin = BROWSER_PROTOCOL_VERSIONS[0];
+		const localMax =
+			BROWSER_PROTOCOL_VERSIONS[BROWSER_PROTOCOL_VERSIONS.length - 1];
+		const floor = Math.max(localMin, remoteMin);
+		const ceiling = Math.min(localMax, remoteMax);
+		if (floor > ceiling) return undefined;
 		return health;
 	} catch {
 		return undefined;
