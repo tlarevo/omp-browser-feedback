@@ -135,14 +135,17 @@ describe("batch.feedback validation", () => {
 	});
 
 	test("rejects batch with invalid item type", () => {
-		const result = validateFeedbackEvent({
-			protocolVersion: BROWSER_PROTOCOL_VERSION,
-			eventId: "batch_5",
-			type: "batch.feedback",
-			channelId: "ses_123",
-			createdAt: "2026-06-27T10:00:00.000Z",
-			items: [{ ...validItem, tagName: "" }],
-		}, BROWSER_PROTOCOL_VERSION);
+		const result = validateFeedbackEvent(
+			{
+				protocolVersion: BROWSER_PROTOCOL_VERSION,
+				eventId: "batch_5",
+				type: "batch.feedback",
+				channelId: "ses_123",
+				createdAt: "2026-06-27T10:00:00.000Z",
+				items: [{ ...validItem, tagName: "" }],
+			},
+			BROWSER_PROTOCOL_VERSION,
+		);
 		expect(result.ok).toBe(false);
 	});
 });

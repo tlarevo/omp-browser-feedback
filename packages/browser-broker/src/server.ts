@@ -5,10 +5,12 @@ import {
 	BROWSER_BROKER_SERVICE,
 	BROWSER_FEEDBACK_LIMITS,
 	BROWSER_PROTOCOL_VERSION,
-	BROWSER_PROTOCOL_VERSIONS,
 	BROWSER_PROTOCOL_VERSION_RANGE,
+	BROWSER_PROTOCOL_VERSIONS,
 	type BrowserFeedbackEvent,
 	type BrowserProtocolVersion,
+	checkFeedbackLimits,
+	downgradeToV1,
 	ENDPOINT_FEEDBACK_SUBMIT,
 	ENDPOINT_HEALTH,
 	ENDPOINT_PAIR_OPEN,
@@ -22,21 +24,25 @@ import {
 	ENDPOINT_SESSION_UPDATE,
 	ENDPOINT_SESSIONS_LIST,
 	ENDPOINT_WS_OMP,
-	checkFeedbackLimits,
-	downgradeToV1,
 	inferProtocolVersion,
 	matchEndpoint,
 	negotiateProtocolVersion,
 	templateToRegex,
-	utf8ByteLength,
-	validateFeedbackEvent,
-	validateFeedbackAck,
 	validateBatchFeedback,
+	validateFeedbackAck,
+	validateFeedbackEvent,
 	validateSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
 import type { Server } from "bun";
-import { isAuthorizedBrowserRequest, isAuthorizedRequest, safeStringCompare } from "./auth";
-import { defaultFeedbackDataDir, defaultPairingRegistryPath } from "./discovery";
+import {
+	isAuthorizedBrowserRequest,
+	isAuthorizedRequest,
+	safeStringCompare,
+} from "./auth";
+import {
+	defaultFeedbackDataDir,
+	defaultPairingRegistryPath,
+} from "./discovery";
 import { InMemoryFeedbackStore } from "./feedback-store";
 import { JournalStore } from "./journal";
 import { createPairingStore } from "./pairing-store";
@@ -89,7 +95,6 @@ async function readJson(request: Request): Promise<unknown> {
 	const text = await request.text();
 	return text.length > 0 ? JSON.parse(text) : {};
 }
-
 
 async function readFeedbackRequest(
 	request: Request,
@@ -453,10 +458,17 @@ export async function createBrowserBrokerServer(
 					);
 				}
 				const raw = await readFeedbackRequest(request, screenshots);
-				let result;
-				if (raw && typeof raw === "object" && "type" in raw && (raw as any).type === "batch.feedback") {
-						result = validateBatchFeedback(raw);
-					} else {
+				let result:
+					| ReturnType<typeof validateBatchFeedback>
+					| ReturnType<typeof validateFeedbackEvent>;
+				if (
+					raw &&
+					typeof raw === "object" &&
+					"type" in raw &&
+					(raw as Record<string, unknown>).type === "batch.feedback"
+				) {
+					result = validateBatchFeedback(raw);
+				} else {
 					const declaredVersion = inferProtocolVersion(raw);
 					result = validateFeedbackEvent(raw, declaredVersion ?? 2);
 				}
@@ -508,7 +520,7 @@ export async function createBrowserBrokerServer(
 					}
 					wirePayload = v1Result.value;
 				}
-				let event: BrowserFeedbackEvent = result.value;
+				const event: BrowserFeedbackEvent = result.value;
 				// Store the original event (tracks eventId for ACK matching).
 				await feedback.add({
 					channelId: event.channelId,

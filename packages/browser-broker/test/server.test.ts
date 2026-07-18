@@ -83,7 +83,7 @@ async function redeemPairingCode(
 	});
 }
 
-async function openAndRedeemPairing(server: { baseUrl: string }) {
+async function _openAndRedeemPairing(server: { baseUrl: string }) {
 	const issued = await openPairingWindow(server);
 	return (await (await redeemPairingCode(server, issued.code)).json()) as {
 		capabilityToken: string;
@@ -530,7 +530,7 @@ describe("batch.feedback", () => {
 
 	test("accepts batch feedback with multipart screenshots", async () => {
 		const server = await createServer();
-		const headers = rootJsonHeaders;
+		const _headers = rootJsonHeaders;
 		const form = new FormData();
 		form.set(
 			"event",
@@ -701,7 +701,7 @@ describe("security hardening", () => {
 
 	test("brute-force pairing code returns no token material", async () => {
 		const server = await createServer();
-		const issued = await openPairingWindow(server);
+		const _issued = await openPairingWindow(server);
 
 		for (let i = 0; i < 6; i++) {
 			const response = await fetch(`${server.baseUrl}/api/pair`, {

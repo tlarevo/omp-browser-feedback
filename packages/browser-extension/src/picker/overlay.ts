@@ -1,14 +1,10 @@
-import {
-	generateSelector,
-	isInShadowContext,
-	isShadowRoot,
-} from "./selectors";
+import { generateSelector, isInShadowContext, isShadowRoot } from "./selectors";
 import {
 	createTooltipElement,
 	extractTooltipState,
 	hideTooltip,
-	updateTooltip,
 	type TooltipState,
+	updateTooltip,
 } from "./tooltip";
 
 export interface PickerCallbacks {
@@ -79,10 +75,7 @@ function createChipElement(
 	return chip;
 }
 
-function moveOverlay(
-	overlay: HTMLElement,
-	element: Element,
-): void {
+function moveOverlay(overlay: HTMLElement, element: Element): void {
 	const rect = element.getBoundingClientRect();
 	Object.assign(overlay.style, {
 		left: `${rect.left}px`,
@@ -135,8 +128,7 @@ function unsupportedReason(element: Element): string | undefined {
 			}
 		}
 		ancestor =
-			ancestor.parentNode ??
-			(isShadowRoot(ancestor) ? ancestor.host : null);
+			ancestor.parentNode ?? (isShadowRoot(ancestor) ? ancestor.host : null);
 	}
 	return undefined;
 }
@@ -297,9 +289,7 @@ export function activatePicker(
 				const base = walkTarget ?? current;
 				if (!base) return;
 				const next =
-					key === "ArrowUp"
-						? walkableParent(base)
-						: walkableChild(base);
+					key === "ArrowUp" ? walkableParent(base) : walkableChild(base);
 				if (next) {
 					walkTarget = next;
 					current = next;
@@ -320,9 +310,7 @@ export function activatePicker(
 			event.preventDefault();
 			const direction = event.deltaY > 0 ? "down" : "up";
 			const next =
-				direction === "down"
-					? walkableChild(base)
-					: walkableParent(base);
+				direction === "down" ? walkableChild(base) : walkableParent(base);
 			if (next) {
 				walkTarget = next;
 				current = next;

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+import type { ToolbarSession } from "../src/toolbar/state";
 import {
 	buildPickedSummary,
 	cancelNote,
@@ -11,7 +12,6 @@ import {
 	showToolbar,
 	updateNoteText,
 } from "../src/toolbar/state";
-import type { ToolbarSession } from "../src/toolbar/state";
 
 function fakeSession(overrides: Partial<ToolbarSession> = {}): ToolbarSession {
 	return {
@@ -43,7 +43,7 @@ describe("showToolbar / hideToolbar", () => {
 
 	test("hideToolbar resets visible, noteEditing, noteText, and lastPickedSummary", () => {
 		let state = showToolbar(createToolbarState());
-		state = enterNoteEditing(state, "<div> .foo \"bar\"");
+		state = enterNoteEditing(state, '<div> .foo "bar"');
 		state = updateNoteText(state, "my note");
 		state = hideToolbar(state);
 		expect(state.visible).toBe(false);
@@ -100,10 +100,10 @@ describe("selectSession", () => {
 
 describe("enterNoteEditing", () => {
 	test("increments pickCount and enters note editing", () => {
-		const state = enterNoteEditing(createToolbarState(), "<div> .foo \"hi\"");
+		const state = enterNoteEditing(createToolbarState(), '<div> .foo "hi"');
 		expect(state.pickCount).toBe(1);
 		expect(state.noteEditing).toBe(true);
-		expect(state.lastPickedSummary).toBe("<div> .foo \"hi\"");
+		expect(state.lastPickedSummary).toBe('<div> .foo "hi"');
 		expect(state.noteText).toBe("");
 	});
 

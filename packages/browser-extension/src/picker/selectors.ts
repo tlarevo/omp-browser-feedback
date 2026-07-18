@@ -8,10 +8,10 @@
 // Every accepted selector is verified unique against the element's root.
 
 /** Safe check — ShadowRoot may not exist in test environments like linkedom. */
-export function isShadowRoot(node: Node | null | undefined): node is ShadowRoot {
-	return (
-		typeof ShadowRoot !== "undefined" && node instanceof ShadowRoot
-	);
+export function isShadowRoot(
+	node: Node | null | undefined,
+): node is ShadowRoot {
+	return typeof ShadowRoot !== "undefined" && node instanceof ShadowRoot;
 }
 
 const PREFERRED_ATTRIBUTES = [
@@ -401,9 +401,7 @@ function generateRootScopedSelector(element: Element): string {
 				? (current.getRootNode() as ShadowRoot).host
 				: null);
 		if (!parentNode) break;
-		if (
-			parentNode.tagName.toLowerCase() === "html"
-		) {
+		if (parentNode.tagName.toLowerCase() === "html") {
 			parts.unshift("html");
 			return parts.join(" > ");
 		}
@@ -419,9 +417,7 @@ function generateRootScopedSelector(element: Element): string {
  * Each segment contains a unique selector and a `shadowRoot` flag indicating
  * whether it crosses into a shadow root.
  */
-export function generateSelectorSegments(
-	element: Element,
-): SelectorSegment[] {
+export function generateSelectorSegments(element: Element): SelectorSegment[] {
 	const segments: SelectorSegment[] = [];
 	// Walk from element up to document, collecting shadow boundaries
 	const chain: Element[] = [];

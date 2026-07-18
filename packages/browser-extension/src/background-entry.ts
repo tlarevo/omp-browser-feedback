@@ -1,6 +1,6 @@
 import {
-	BROWSER_PROTOCOL_VERSION,
 	type BatchFeedback,
+	BROWSER_PROTOCOL_VERSION,
 	type BrowserFeedbackEvent,
 	type BrowserPageContext,
 	type BrowserSessionRegistration,
@@ -17,6 +17,16 @@ import {
 	submitFeedback,
 } from "./background";
 import {
+	addItemToBasket,
+	type Basket,
+	createEmptyBasket,
+	removeItemFromBasket,
+} from "./basket";
+import {
+	type ComponentDetectionResult,
+	detectFrameworkComponent,
+} from "./component-detection";
+import {
 	CAPTURE_INTERVAL_MS,
 	calculateStitchPlan,
 	cancelActiveCapture,
@@ -26,20 +36,12 @@ import {
 	setActiveCapture,
 	stitchFrames,
 } from "./fullpage";
-import {
-	addItemToBasket,
-	type Basket,
-	createEmptyBasket,
-	removeItemFromBasket,
-} from "./basket";
 import { captureAndCrop } from "./screenshot";
-import {
-	type ComponentDetectionResult,
-	detectFrameworkComponent,
-} from "./component-detection";
 
 const DEFAULT_HOST = "127.0.0.1";
-const DEFAULT_PORTS: number[] = portsInRange(parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE));
+const DEFAULT_PORTS: number[] = portsInRange(
+	parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE),
+);
 
 // ── Badge helpers ──────────────────────────────────────────────────────────
 
@@ -330,7 +332,7 @@ function readBasketFromStorage(stored: Record<string, unknown>): Basket {
 	return createEmptyBasket();
 }
 
-async function addToBasket(
+async function _addToBasket(
 	event: DomSelectionFeedback,
 	note: string,
 ): Promise<MessageResponse<Basket>> {
@@ -369,7 +371,7 @@ async function removeFromBasket(
 	}
 }
 
-async function clearBasket(): Promise<MessageResponse<Basket>> {
+async function _clearBasket(): Promise<MessageResponse<Basket>> {
 	try {
 		const updated = createEmptyBasket();
 		await setStorage({ basket: updated });
@@ -616,13 +618,13 @@ async function handleRegionSelected(
 			}
 		}
 		if (screenshot && windowId !== undefined && windowId >= 0) {
-		// Show annotation canvas if we have a screenshot and a target tab
+			// Show annotation canvas if we have a screenshot and a target tab
 			const dataUrl = await blobToDataUrl(screenshot);
-		const ssEvt = eventToSubmit as PageScreenshotFeedback;
-		const width = ssEvt.screenshot.width;
-		const height = ssEvt.screenshot.height;
+			const ssEvt = eventToSubmit as PageScreenshotFeedback;
+			const width = ssEvt.screenshot.width;
+			const height = ssEvt.screenshot.height;
 
-			const annotatorResult = await showAnnotatorInTab(windowId!, {
+			const annotatorResult = await showAnnotatorInTab(windowId ?? -1, {
 				imageDataUrl: dataUrl,
 				imageWidth: width,
 				imageHeight: height,
@@ -655,7 +657,7 @@ async function handleRegionSelected(
 	}
 }
 // ── Fullpage capture orchestration ─────────────────────────────────────────
-async function handleStartFullpageCapture(
+async function _handleStartFullpageCapture(
 	tabId: number,
 	windowId: number,
 	channelId: string,
@@ -676,7 +678,7 @@ async function handleStartFullpageCapture(
 			scrollHeight,
 			viewportHeight,
 			devicePixelRatio: dpr,
-			scrollY: originalScrollY,
+			scrollY: _originalScrollY,
 		} = dims.data;
 		const plan = calculateStitchPlan(scrollHeight, viewportHeight);
 
@@ -849,7 +851,7 @@ async function handleStartFullpageCapture(
 	}
 }
 
-async function handleGetCaptureStatus(): Promise<
+async function _handleGetCaptureStatus(): Promise<
 	MessageResponse<{ capturing: boolean; current: number; total: number } | null>
 > {
 	const capture = getActiveCapture();
@@ -866,7 +868,7 @@ async function handleGetCaptureStatus(): Promise<
 	};
 }
 
-function handleCancelCapture(): void {
+function _handleCancelCapture(): void {
 	cancelActiveCapture();
 }
 
@@ -874,7 +876,7 @@ function consentKey(origin: string): string {
 	return `consoleCapture:${origin}`;
 }
 
-async function handleGetConsoleConsent(
+async function _handleGetConsoleConsent(
 	origin: string,
 ): Promise<MessageResponse<boolean>> {
 	try {
@@ -986,11 +988,15 @@ chrome.runtime.onMessage.addListener(
 		if (message.type === "omp:region-selected") {
 			const event = message.event as BrowserFeedbackEvent;
 			const windowId = sender.tab?.windowId;
-			const region = message.region as { x: number; y: number; width: number; height: number };
+			const region = message.region as {
+				x: number;
+				y: number;
+				width: number;
+				height: number;
+			};
 			handleRegionSelected(event, windowId, region).then(sendResponse);
 			return true;
 		}
-
 
 		if (message.type === "omp:get-basket") {
 			getBasket().then(sendResponse);

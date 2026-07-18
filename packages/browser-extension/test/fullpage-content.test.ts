@@ -42,7 +42,7 @@ describe("hideFixedElements", () => {
 			</body>`,
 		);
 
-		const nav = document.getElementById("nav")!;
+		const nav = document.getElementById("nav") ?? document.createElement("div");
 		window.getComputedStyle = (el: Element) =>
 			({
 				position: el.id === "nav" ? "fixed" : "static",
@@ -74,7 +74,7 @@ describe("showFixedElements", () => {
 			</body>`,
 		);
 
-		const nav = document.getElementById("nav")!;
+		const nav = document.getElementById("nav") ?? document.createElement("div");
 		window.getComputedStyle = () =>
 			({ position: "fixed" }) as CSSStyleDeclaration;
 

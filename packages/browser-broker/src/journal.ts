@@ -73,7 +73,7 @@ function loadJournal(filePath: string): JournalLine[] {
 		const content = fs.readFileSync(filePath, "utf8");
 		let byteOffset = 0;
 		for (const raw of content.split("\n")) {
-			const lineBytes = Buffer.byteLength(raw + "\n", "utf8");
+			const lineBytes = Buffer.byteLength(`${raw}\n`, "utf8");
 			if (raw.trim() === "") {
 				byteOffset += lineBytes;
 				continue;
@@ -298,7 +298,7 @@ export class JournalStore {
 		this.#channelLines.set(channelId, compacted);
 		const content =
 			compacted.length > 0
-				? compacted.map((l) => JSON.stringify(l)).join("\n") + "\n"
+				? `${compacted.map((l) => JSON.stringify(l)).join("\n")}\n`
 				: "";
 		atomicReplace(journalPath(this.#dataDir, channelId), content);
 		this.#syncBytes(channelId);
@@ -319,7 +319,7 @@ export class JournalStore {
 		this.#channelLines.set(channelId, filtered);
 		const content =
 			filtered.length > 0
-				? filtered.map((l) => JSON.stringify(l)).join("\n") + "\n"
+				? `${filtered.map((l) => JSON.stringify(l)).join("\n")}\n`
 				: "";
 		atomicReplace(journalPath(this.#dataDir, channelId), content);
 		this.#syncBytes(channelId);

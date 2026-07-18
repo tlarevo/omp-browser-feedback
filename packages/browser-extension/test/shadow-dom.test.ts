@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 import { parseHTML } from "linkedom";
-import { generateSelector, generateSelectorSegments } from "../src/picker/selectors";
+import {
+	generateSelector,
+	generateSelectorSegments,
+} from "../src/picker/selectors";
 
 describe("generateSelectorSegments", () => {
 	test("returns a single segment for a plain light-DOM element", () => {
@@ -40,9 +43,7 @@ describe("generateSelector (existing behavior)", () => {
 		);
 		const element = document.querySelector("button[data-testid='save']");
 		expect(element).toBeTruthy();
-		expect(generateSelector(element as Element)).toBe(
-			'[data-testid="save"]',
-		);
+		expect(generateSelector(element as Element)).toBe('[data-testid="save"]');
 	});
 
 	test("falls back to nth-of-type path when stable attributes are unavailable", () => {

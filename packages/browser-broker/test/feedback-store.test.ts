@@ -29,7 +29,9 @@ function makeStore(bounds?: {
 	journal.load();
 	return new InMemoryFeedbackStore({
 		journal,
-		...(bounds?.screenshotRootDir ? { screenshotRootDir: bounds.screenshotRootDir } : {}),
+		...(bounds?.screenshotRootDir
+			? { screenshotRootDir: bounds.screenshotRootDir }
+			: {}),
 	});
 }
 

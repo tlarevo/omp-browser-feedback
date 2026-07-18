@@ -4,7 +4,9 @@ import { generateBrowserBrokerToken } from "./auth";
 import { createBrowserBrokerServer } from "./server";
 
 const portArg = process.argv.find((arg) => arg.startsWith("--port="));
-const port = portArg ? Number(portArg.slice("--port=".length)) : PREFERRED_BROWSER_BROKER_PORT;
+const port = portArg
+	? Number(portArg.slice("--port=".length))
+	: PREFERRED_BROWSER_BROKER_PORT;
 const authToken =
 	process.env.OMP_BROWSER_BROKER_TOKEN ?? generateBrowserBrokerToken();
 

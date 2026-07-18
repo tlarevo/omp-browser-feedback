@@ -8,14 +8,15 @@ import {
 } from "@oh-my-pi/browser-protocol";
 import { Event as LinkedomEvent, parseHTML } from "linkedom";
 import {
-	captureAccessibility,
-	generateXpath,
 	activatePickerAndCapture,
 	buildDomSelectionFeedback,
+	captureAccessibility,
 	captureElementContext,
+	generateXpath,
 	redactOuterHtml,
 	redactSensitiveAttributes,
 } from "../src/content-script";
+
 // Ensure Document is available as a global for linkedom test environments
 if (typeof globalThis.Document === "undefined") {
 	const linkedomDoc = parseHTML("").document;
@@ -54,7 +55,7 @@ function buildHugeDomFixture(opts: {
 	if (!div) throw new Error("Missing div");
 	if (htmlLen > 0) {
 		Object.defineProperty(div, "outerHTML", {
-			value: "<div>" + outerHtmlContent + "</div>",
+			value: `<div>${outerHtmlContent}</div>`,
 			configurable: true,
 		});
 	}
@@ -270,7 +271,8 @@ describe("buildDomSelectionFeedback", () => {
 		if (event.type !== "dom.selection")
 			throw new Error("Expected DOM selection");
 		expect(event.element.text).toBeDefined();
-		expect(codePointLength(event.element.text!)).toBe(
+		const text = event.element.text ?? "";
+		expect(codePointLength(text)).toBe(
 			BROWSER_FEEDBACK_LIMITS.maxElementTextLength,
 		);
 		expect(event.element.text).toContain(BROWSER_FEEDBACK_TRUNCATION_MARKER);

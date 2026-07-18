@@ -22,11 +22,15 @@ function extractScreenshotRefs(payload: unknown): string[] {
 	const refs: string[] = [];
 	const p = payload as Record<string, unknown>;
 	const screenshot = p.screenshot as Record<string, unknown> | undefined;
-	if (screenshot && typeof screenshot.ref === "string") refs.push(screenshot.ref);
+	if (screenshot && typeof screenshot.ref === "string")
+		refs.push(screenshot.ref);
 	return refs;
 }
 
-function removeScreenshotFiles(screenshotRootDir: string, refs: string[]): void {
+function removeScreenshotFiles(
+	screenshotRootDir: string,
+	refs: string[],
+): void {
 	for (const ref of refs) {
 		const filePath = path.join(screenshotRootDir, ref);
 		if (!filePath.startsWith(screenshotRootDir)) continue;
@@ -34,7 +38,7 @@ function removeScreenshotFiles(screenshotRootDir: string, refs: string[]): void 
 			if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
 		} catch {}
 	}
-	}
+}
 export class InMemoryFeedbackStore {
 	readonly #journal: JournalStore;
 	readonly #screenshotRootDir: string;
@@ -49,9 +53,7 @@ export class InMemoryFeedbackStore {
 	 * before the promise resolves. Returns a bounds error if the channel
 	 * is saturated with unacknowledged events.
 	 */
-	async add(
-		event: StoredBrowserFeedback,
-	): Promise<StoredBrowserFeedback> {
+	async add(event: StoredBrowserFeedback): Promise<StoredBrowserFeedback> {
 		const journalEntry: JournalEntry = {
 			type: "event",
 			eventId: event.eventId,
@@ -130,8 +132,7 @@ export class InMemoryFeedbackStore {
 		// Delete screenshot only AFTER the ACK is durably recorded.
 		if (this.#screenshotRootDir) {
 			const event = lines.find(
-				(l): l is JournalEntry =>
-					l.type === "event" && l.eventId === eventId,
+				(l): l is JournalEntry => l.type === "event" && l.eventId === eventId,
 			);
 			if (event) {
 				const refs = extractScreenshotRefs(event.payload);

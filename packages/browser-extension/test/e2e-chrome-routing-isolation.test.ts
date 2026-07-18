@@ -16,7 +16,14 @@
  * NOTE: Do NOT pass executablePath. Playwright must use its own Chromium for CDP compatibility.
  */
 
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import {
+	afterAll,
+	afterEach,
+	beforeAll,
+	describe,
+	expect,
+	test,
+} from "bun:test";
 import * as fs from "node:fs";
 import * as fsp from "node:fs/promises";
 import * as os from "node:os";
@@ -91,7 +98,6 @@ interface StoredPairingState {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-
 async function pollUntil<T>(
 	fn: () => Promise<T>,
 	predicate: (v: T) => boolean,
@@ -108,7 +114,9 @@ async function pollUntil<T>(
 	}
 }
 
-async function openPairingWindow(sessionId: string): Promise<PairingWindowResponse> {
+async function openPairingWindow(
+	sessionId: string,
+): Promise<PairingWindowResponse> {
 	const response = await fetch(`${broker.baseUrl}/api/pair/open`, {
 		method: "POST",
 		headers: ROOT_JSON_HEADERS,
@@ -220,37 +228,34 @@ async function patchSessionStatus(
 async function getLatestFeedback(
 	sessionId: string,
 ): Promise<LatestFeedbackResponse> {
-	return (
-		await (
-			await fetch(`${broker.baseUrl}/api/sessions/${sessionId}/feedback/latest`, {
-				headers: {
-					Authorization: `Bearer ${AUTH_TOKEN}`,
-				},
-			})
-		).json()
-	) as LatestFeedbackResponse;
+	return (await (
+		await fetch(`${broker.baseUrl}/api/sessions/${sessionId}/feedback/latest`, {
+			headers: {
+				Authorization: `Bearer ${AUTH_TOKEN}`,
+			},
+		})
+	).json()) as LatestFeedbackResponse;
 }
 
-async function getAllFeedback(sessionId: string): Promise<
-	Array<{ eventId: string; channelId: string; type: string }>
-> {
+async function getAllFeedback(
+	sessionId: string,
+): Promise<Array<{ eventId: string; channelId: string; type: string }>> {
 	const body = (await (
 		await fetch(`${broker.baseUrl}/api/sessions/${sessionId}/feedback`, {
 			headers: {
 				Authorization: `Bearer ${AUTH_TOKEN}`,
 			},
 		})
-	).json()) as { feedback: Array<{ eventId: string; channelId: string; type: string }> };
+	).json()) as {
+		feedback: Array<{ eventId: string; channelId: string; type: string }>;
+	};
 	return body.feedback ?? [];
 }
 /**
  * Navigate to a test page, activate the DOM picker with a specific channelId,
  * and click the #target element. Exercises the real Chrome extension picker flow.
  */
-async function pickElement(
-	pageUrl: string,
-	channelId: string,
-): Promise<void> {
+async function pickElement(pageUrl: string, channelId: string): Promise<void> {
 	const page = await context.newPage();
 	await page.goto(pageUrl);
 	// Real browser integration: wait for content script registration before messaging it.
@@ -258,7 +263,13 @@ async function pickElement(
 
 	const tabId = await findTabIdByTitle(await page.title());
 	const pickerActivation = serviceWorker.evaluate(
-		({ nextTabId, nextChannelId }: { nextTabId: number; nextChannelId: string }) =>
+		({
+			nextTabId,
+			nextChannelId,
+		}: {
+			nextTabId: number;
+			nextChannelId: string;
+		}) =>
 			chrome.tabs.sendMessage(nextTabId, {
 				type: "omp:activate-picker",
 				channelId: nextChannelId,
@@ -274,13 +285,7 @@ async function pickElement(
 	await pickerActivation.catch(() => {});
 }
 
-
-
-function registerFeedback(
-	channelId: string,
-	eventId: string,
-	note?: string,
-) {
+function registerFeedback(channelId: string, eventId: string, note?: string) {
 	return fetch(`${broker.baseUrl}/api/feedback`, {
 		method: "POST",
 		headers: ROOT_JSON_HEADERS,
@@ -308,10 +313,7 @@ function registerFeedback(
 	});
 }
 
-function registerScreenshotFeedback(
-	channelId: string,
-	eventId: string,
-) {
+function registerScreenshotFeedback(channelId: string, eventId: string) {
 	return fetch(`${broker.baseUrl}/api/feedback`, {
 		method: "POST",
 		headers: ROOT_JSON_HEADERS,
@@ -364,7 +366,9 @@ beforeAll(async () => {
 		}
 	}
 	if (!brokerStarted) {
-		throw new Error("All ports 4317–4337 are occupied; cannot start E2E broker.");
+		throw new Error(
+			"All ports 4317–4337 are occupied; cannot start E2E broker.",
+		);
 	}
 
 	// Register both sessions with duplicate display names
@@ -485,25 +489,33 @@ afterEach(() => {
 describe.skipIf(SKIP)("Chrome routing isolation — two OMP sessions", () => {
 	test("routes by stable session ID despite duplicate display names", async () => {
 		// Both sessions share displayName "Work Project" but have different IDs
-	const { sessions } = (
-		await (
+		const { sessions } = (await (
 			await fetch(`${broker.baseUrl}/api/sessions`, {
 				headers: { Authorization: `Bearer ${AUTH_TOKEN}` },
 			})
-		).json()
-	) as { sessions: Array<{ sessionId: string; displayName: string; cwd: string }> };
+		).json()) as {
+			sessions: Array<{ sessionId: string; displayName: string; cwd: string }>;
+		};
 
-	expect(sessions).toHaveLength(2);
-	const displayNames = sessions.map((s: { displayName: string }) => s.displayName);
-	expect(displayNames.filter((n: string) => n === "Work Project")).toHaveLength(2);
+		expect(sessions).toHaveLength(2);
+		const displayNames = sessions.map(
+			(s: { displayName: string }) => s.displayName,
+		);
+		expect(
+			displayNames.filter((n: string) => n === "Work Project"),
+		).toHaveLength(2);
 
-	// Routing uses stable IDs, not display names
-	const alpha = sessions.find((s: { sessionId: string }) => s.sessionId === SESSION_A.sessionId);
-	const beta = sessions.find((s: { sessionId: string }) => s.sessionId === SESSION_B.sessionId);
-	expect(alpha).toBeDefined();
-	expect(beta).toBeDefined();
-	expect(alpha!.cwd).toBe(SESSION_A.cwd);
-	expect(beta!.cwd).toBe(SESSION_B.cwd);
+		// Routing uses stable IDs, not display names
+		const alpha = sessions.find(
+			(s: { sessionId: string }) => s.sessionId === SESSION_A.sessionId,
+		);
+		const beta = sessions.find(
+			(s: { sessionId: string }) => s.sessionId === SESSION_B.sessionId,
+		);
+		expect(alpha).toBeDefined();
+		expect(beta).toBeDefined();
+		expect(alpha?.cwd).toBe(SESSION_A.cwd);
+		expect(beta?.cwd).toBe(SESSION_B.cwd);
 
 		// Submit feedback to each channel via API and verify routing
 		await registerFeedback(SESSION_A.channelId, "evt-alpha-1");
@@ -557,7 +569,6 @@ describe.skipIf(SKIP)("Chrome routing isolation — two OMP sessions", () => {
 		const finalA = await getLatestFeedback(SESSION_A.sessionId);
 		expect(finalA.feedback?.eventId).toBe(afterA1.feedback?.eventId);
 	}, 30_000);
-
 
 	test("interleaved DOM selections maintain session attribution", async () => {
 		// Interleave: A, B, A, B
@@ -666,9 +677,9 @@ describe.skipIf(SKIP)("Chrome routing isolation — two OMP sessions", () => {
 		const latestB = await getLatestFeedback(SESSION_B.sessionId);
 
 		expect(latestA.feedback?.eventId).toBe("screenshot-a1");
-	expect(latestA.feedback?.payload?.type).toBe("page.screenshot");
+		expect(latestA.feedback?.payload?.type).toBe("page.screenshot");
 		expect(latestB.feedback?.eventId).toBe("screenshot-b1");
-	expect(latestB.feedback?.payload?.type).toBe("page.screenshot");
+		expect(latestB.feedback?.payload?.type).toBe("page.screenshot");
 
 		// Verify no cross-contamination with mixed event types
 		await registerFeedback(SESSION_A.channelId, "dom-a-after-screenshot");
@@ -678,9 +689,9 @@ describe.skipIf(SKIP)("Chrome routing isolation — two OMP sessions", () => {
 		const finalB = await getLatestFeedback(SESSION_B.sessionId);
 
 		expect(finalA.feedback?.eventId).toBe("dom-a-after-screenshot");
-	expect(finalA.feedback?.payload?.type).toBe("dom.selection");
+		expect(finalA.feedback?.payload?.type).toBe("dom.selection");
 		expect(finalB.feedback?.eventId).toBe("screenshot-b2");
-	expect(finalB.feedback?.payload?.type).toBe("page.screenshot");
+		expect(finalB.feedback?.payload?.type).toBe("page.screenshot");
 	});
 
 	test("batch events maintain per-target ordering", async () => {

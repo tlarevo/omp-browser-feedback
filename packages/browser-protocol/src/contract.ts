@@ -21,7 +21,6 @@ export const BROWSER_PROTOCOL_VERSION_RANGE = {
 	max: BROWSER_PROTOCOL_VERSION,
 } as const;
 
-
 // ── Auth kinds ─────────────────────────────────────────────────────────────
 
 export const AUTH_NONE = "none" as const;

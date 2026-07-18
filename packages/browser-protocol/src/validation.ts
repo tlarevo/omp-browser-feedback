@@ -1,10 +1,6 @@
 import { type Type, type } from "arktype";
-import { BATCH_FEEDBACK_LIMITS, BROWSER_FEEDBACK_LIMITS, codePointLength } from "./limits";
-import {
-	batchFeedbackSchema,
-	browserFeedbackEventSchema,
-	browserSessionRegistrationSchema,
-} from "./schemas";
+import { BROWSER_FEEDBACK_LIMITS, codePointLength } from "./limits";
+import { batchFeedbackSchema } from "./schemas";
 import type {
 	BatchFeedback,
 	BrowserFeedbackAck,

@@ -195,9 +195,12 @@ export interface ToolbarHandle {
 
 function statusClass(status: ToolbarSession["status"]): string {
 	switch (status) {
-		case "active": return "status-active";
-		case "idle": return "status-idle";
-		case "disconnected": return "status-disconnected";
+		case "active":
+			return "status-active";
+		case "idle":
+			return "status-idle";
+		case "disconnected":
+			return "status-disconnected";
 	}
 }
 
@@ -213,7 +216,10 @@ function renderSessionPill(
 	pill.className = "session-pill";
 	pill.setAttribute("role", "button");
 	pill.setAttribute("tabindex", "0");
-	pill.setAttribute("aria-label", `Session: ${session?.sessionName ?? "none"}. Click to switch.`);
+	pill.setAttribute(
+		"aria-label",
+		`Session: ${session?.sessionName ?? "none"}. Click to switch.`,
+	);
 
 	// Status dot
 	const dot = doc.createElement("span");
@@ -223,7 +229,8 @@ function renderSessionPill(
 	// Label
 	const label = doc.createElement("span");
 	label.className = "label";
-	label.textContent = session?.displayName ?? session?.sessionName ?? "No session";
+	label.textContent =
+		session?.displayName ?? session?.sessionName ?? "No session";
 	pill.appendChild(label);
 
 	// Branch
@@ -244,7 +251,10 @@ function renderSessionPill(
 		const opt = doc.createElement("button");
 		opt.className = `session-option${s.sessionId === selectedId ? " selected" : ""}`;
 		opt.setAttribute("role", "option");
-		opt.setAttribute("aria-selected", s.sessionId === selectedId ? "true" : "false");
+		opt.setAttribute(
+			"aria-selected",
+			s.sessionId === selectedId ? "true" : "false",
+		);
 		opt.type = "button";
 
 		const optDot = doc.createElement("span");
@@ -330,13 +340,19 @@ export function createToolbar(
 	doc.body.appendChild(host);
 
 	let dropdownOpen = false;
-	let dragState: { startX: number; startY: number; origRight: number; origBottom: number } | null = null;
+	let dragState: {
+		startX: number;
+		startY: number;
+		origRight: number;
+		origBottom: number;
+	} | null = null;
 
 	// ── Drag handling ──────────────────────────────────────────────────────
 	const onMouseDown = (e: MouseEvent) => {
 		// Don't drag from interactive children
 		const target = e.target as HTMLElement;
-		if (target.closest("button, input, select, .session-option, .note-area")) return;
+		if (target.closest("button, input, select, .session-option, .note-area"))
+			return;
 
 		dragState = {
 			startX: e.clientX,
@@ -387,7 +403,7 @@ export function createToolbar(
 	let state: ToolbarState | null = null;
 
 	function render() {
-		if (!state || !state.visible) {
+		if (!state?.visible) {
 			host.remove();
 			return;
 		}
@@ -438,7 +454,8 @@ export function createToolbar(
 		// Mode pill
 		const mode = doc.createElement("span");
 		mode.className = "mode-pill";
-		mode.textContent = state.captureMode === "element" ? "Element" : state.captureMode;
+		mode.textContent =
+			state.captureMode === "element" ? "Element" : state.captureMode;
 		toolbar.appendChild(mode);
 
 		// Send button
@@ -470,8 +487,14 @@ export function createToolbar(
 
 		// Note area (post-pick)
 		if (state.noteEditing) {
-			const noteArea = renderNoteArea(doc, state.lastPickedSummary, state.noteText);
-			const noteInput = noteArea.querySelector(".note-input") as HTMLInputElement | null;
+			const noteArea = renderNoteArea(
+				doc,
+				state.lastPickedSummary,
+				state.noteText,
+			);
+			const noteInput = noteArea.querySelector(
+				".note-input",
+			) as HTMLInputElement | null;
 			if (noteInput) {
 				noteInput.addEventListener("input", () => {
 					if (state) {

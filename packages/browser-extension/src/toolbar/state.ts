@@ -51,7 +51,13 @@ export function showToolbar(state: ToolbarState): ToolbarState {
 }
 
 export function hideToolbar(state: ToolbarState): ToolbarState {
-	return { ...state, visible: false, noteEditing: false, noteText: "", lastPickedSummary: null };
+	return {
+		...state,
+		visible: false,
+		noteEditing: false,
+		noteText: "",
+		lastPickedSummary: null,
+	};
 }
 
 export function setSessions(
@@ -60,7 +66,8 @@ export function setSessions(
 ): ToolbarState {
 	// Keep selection only if still in the list; otherwise auto-select first
 	const session =
-		state.session && sessions.some((s) => s.sessionId === state.session!.sessionId)
+		state.session &&
+		sessions.some((s) => s.sessionId === state.session?.sessionId)
 			? state.session
 			: sessions.length > 0
 				? sessions[0]
@@ -97,11 +104,21 @@ export function updateNoteText(
 }
 
 export function confirmNote(state: ToolbarState): ToolbarState {
-	return { ...state, noteEditing: false, noteText: "", lastPickedSummary: null };
+	return {
+		...state,
+		noteEditing: false,
+		noteText: "",
+		lastPickedSummary: null,
+	};
 }
 
 export function cancelNote(state: ToolbarState): ToolbarState {
-	return { ...state, noteEditing: false, noteText: "", lastPickedSummary: null };
+	return {
+		...state,
+		noteEditing: false,
+		noteText: "",
+		lastPickedSummary: null,
+	};
 }
 
 /** Build a short summary string from a picked element's tag, selector, and text. */
@@ -111,6 +128,7 @@ export function buildPickedSummary(
 	textSnippet: string,
 ): string {
 	const tagLower = tag.toLowerCase();
-	const text = textSnippet.length > 40 ? `${textSnippet.slice(0, 37)}…` : textSnippet;
+	const text =
+		textSnippet.length > 40 ? `${textSnippet.slice(0, 37)}…` : textSnippet;
 	return `<${tagLower}> ${selector} "${text}"`;
 }

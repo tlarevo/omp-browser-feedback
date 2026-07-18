@@ -7,10 +7,10 @@ import {
 	type BrowserProtocolVersion,
 } from "@oh-my-pi/browser-protocol";
 import {
+	type BrowserBrokerDiscovery,
 	discoverCompatibleBroker,
 	readDiscoveryFile,
 	writeDiscoveryFile,
-	type BrowserBrokerDiscovery,
 } from "../src/discovery";
 import { createBrowserBrokerServer } from "../src/server";
 
@@ -145,10 +145,9 @@ async function sendFeedback(
 }
 
 async function getFeedbackList(baseUrl: string, sessionId: string) {
-	const resp = await fetch(
-		`${baseUrl}/api/sessions/${sessionId}/feedback`,
-		{ headers: authHeaders() },
-	);
+	const resp = await fetch(`${baseUrl}/api/sessions/${sessionId}/feedback`, {
+		headers: authHeaders(),
+	});
 	return (await resp.json()) as {
 		feedback: Array<{ eventId: string }>;
 	};
@@ -160,9 +159,9 @@ describe("port recovery", () => {
 		const { server } = await createServer();
 		expect(server.port).toBeGreaterThan(0);
 
-		const health = await (
+		const health = (await (
 			await fetch(`${server.baseUrl}/api/health`)
-		).json() as { service: string };
+		).json()) as { service: string };
 		expect(health.service).toBe(BROWSER_BROKER_SERVICE);
 	});
 
@@ -272,9 +271,12 @@ describe("restart with capability registry preserved", () => {
 		s1.stop();
 
 		// Registry file should exist after pairing
-		expect(await fs.access(registryPath).then(() => true, () => false)).toBe(
-			true,
-		);
+		expect(
+			await fs.access(registryPath).then(
+				() => true,
+				() => false,
+			),
+		).toBe(true);
 
 		// Start new broker with same registry path
 		const s2 = await createBrowserBrokerServer({
@@ -411,10 +413,7 @@ describe("capability registry corruption recovery", () => {
 
 		// Broker starts despite corruption — quarantine + fresh start
 		const { server } = await createServer(registryPath);
-		const { capabilityToken } = await openAndRedeem(
-			server.baseUrl,
-			"ses_1",
-		);
+		const { capabilityToken } = await openAndRedeem(server.baseUrl, "ses_1");
 		expect(capabilityToken).toMatch(/^bcap_/);
 
 		// New capability works
@@ -443,10 +442,7 @@ describe("capability registry corruption recovery", () => {
 		);
 
 		const { server } = await createServer(registryPath);
-		const { capabilityToken } = await openAndRedeem(
-			server.baseUrl,
-			"ses_1",
-		);
+		const { capabilityToken } = await openAndRedeem(server.baseUrl, "ses_1");
 		expect(capabilityToken).toMatch(/^bcap_/);
 	});
 });
@@ -459,12 +455,7 @@ describe("feedback ordering and replay", () => {
 
 		// Submit 3 feedback events in order
 		for (const id of ["evt_1", "evt_2", "evt_3"]) {
-			const resp = await sendFeedback(
-				server.baseUrl,
-				AUTH_TOKEN,
-				"ses_1",
-				id,
-			);
+			const resp = await sendFeedback(server.baseUrl, AUTH_TOKEN, "ses_1", id);
 			expect(resp.ok).toBe(true);
 		}
 
@@ -485,10 +476,7 @@ describe("feedback ordering and replay", () => {
 
 	test("capability token can submit feedback but cannot read feedback history", async () => {
 		const { server } = await createServer();
-		const { capabilityToken } = await openAndRedeem(
-			server.baseUrl,
-			"ses_1",
-		);
+		const { capabilityToken } = await openAndRedeem(server.baseUrl, "ses_1");
 
 		// Browser can submit feedback with capability token
 		const submit = await sendFeedback(
@@ -500,10 +488,9 @@ describe("feedback ordering and replay", () => {
 		expect(submit.ok).toBe(true);
 
 		// Browser cannot read feedback history (requires root token)
-		const read = await fetch(
-			`${server.baseUrl}/api/sessions/ses_1/feedback`,
-			{ headers: authHeaders(capabilityToken) },
-		);
+		const read = await fetch(`${server.baseUrl}/api/sessions/ses_1/feedback`, {
+			headers: authHeaders(capabilityToken),
+		});
 		expect(read.status).toBe(401);
 	});
 });

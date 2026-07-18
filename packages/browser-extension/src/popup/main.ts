@@ -72,7 +72,18 @@ export type PopupState =
 			consoleCaptureEnabled?: boolean;
 	  }
 	| { kind: "error"; message: string }
-	| { kind: "capturing"; sessions: BrowserSessionRegistration[]; selectedSessionId?: string; basket?: { total: number; items: BasketItemState[]; error?: string } | null; current?: number; total?: number };
+	| {
+			kind: "capturing";
+			sessions: BrowserSessionRegistration[];
+			selectedSessionId?: string;
+			basket?: {
+				total: number;
+				items: BasketItemState[];
+				error?: string;
+			} | null;
+			current?: number;
+			total?: number;
+	  };
 
 export interface BasketItemState {
 	itemId: string;
@@ -379,7 +390,6 @@ export function renderPopup(
 		document.createTextNode("Capture console errors"),
 	);
 	root.append(captureLabel);
-
 
 	// ── ready ──
 	renderSessionCards(

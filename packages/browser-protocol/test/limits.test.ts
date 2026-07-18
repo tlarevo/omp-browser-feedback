@@ -31,13 +31,15 @@ const PAGE: BrowserPageContext = {
 };
 
 /** Build a dom.selection event with controlled field sizes. */
-function makeEvent(overrides: {
-	note?: string;
-	text?: string;
-	outerHtml?: string;
-	attributes?: Record<string, string>;
-	computedStyles?: Record<string, string>;
-} = {}): BrowserFeedbackEvent {
+function makeEvent(
+	overrides: {
+		note?: string;
+		text?: string;
+		outerHtml?: string;
+		attributes?: Record<string, string>;
+		computedStyles?: Record<string, string>;
+	} = {},
+): BrowserFeedbackEvent {
 	return {
 		protocolVersion: BROWSER_PROTOCOL_VERSION,
 		eventId: "evt_1",
@@ -207,12 +209,16 @@ describe("checkFeedbackLimits", () => {
 	// ── note ──────────────────────────────────────────────────────────────
 
 	test("note at exact maxNoteLength passes", () => {
-		const event = makeEvent({ note: repeatCodePoints("n", BROWSER_FEEDBACK_LIMITS.maxNoteLength) });
+		const event = makeEvent({
+			note: repeatCodePoints("n", BROWSER_FEEDBACK_LIMITS.maxNoteLength),
+		});
 		expect(checkFeedbackLimits(event)).toHaveLength(0);
 	});
 
 	test("note at maxNoteLength+1 is rejected", () => {
-		const event = makeEvent({ note: repeatCodePoints("n", BROWSER_FEEDBACK_LIMITS.maxNoteLength + 1) });
+		const event = makeEvent({
+			note: repeatCodePoints("n", BROWSER_FEEDBACK_LIMITS.maxNoteLength + 1),
+		});
 		const v = checkFeedbackLimits(event);
 		expect(v).toHaveLength(1);
 		expect(v[0].code).toBe("note_too_long");
@@ -220,12 +226,16 @@ describe("checkFeedbackLimits", () => {
 	});
 
 	test("emoji note at maxNoteLength passes", () => {
-		const event = makeEvent({ note: EMOJI.repeat(BROWSER_FEEDBACK_LIMITS.maxNoteLength) });
+		const event = makeEvent({
+			note: EMOJI.repeat(BROWSER_FEEDBACK_LIMITS.maxNoteLength),
+		});
 		expect(checkFeedbackLimits(event)).toHaveLength(0);
 	});
 
 	test("emoji note at maxNoteLength+1 is rejected", () => {
-		const event = makeEvent({ note: EMOJI.repeat(BROWSER_FEEDBACK_LIMITS.maxNoteLength + 1) });
+		const event = makeEvent({
+			note: EMOJI.repeat(BROWSER_FEEDBACK_LIMITS.maxNoteLength + 1),
+		});
 		const v = checkFeedbackLimits(event);
 		expect(v).toHaveLength(1);
 		expect(v[0].code).toBe("note_too_long");
@@ -234,12 +244,19 @@ describe("checkFeedbackLimits", () => {
 	// ── element.text ──────────────────────────────────────────────────────
 
 	test("text at exact maxElementTextLength passes", () => {
-		const event = makeEvent({ text: repeatCodePoints("t", BROWSER_FEEDBACK_LIMITS.maxElementTextLength) });
+		const event = makeEvent({
+			text: repeatCodePoints("t", BROWSER_FEEDBACK_LIMITS.maxElementTextLength),
+		});
 		expect(checkFeedbackLimits(event)).toHaveLength(0);
 	});
 
 	test("text at maxElementTextLength+1 is rejected", () => {
-		const event = makeEvent({ text: repeatCodePoints("t", BROWSER_FEEDBACK_LIMITS.maxElementTextLength + 1) });
+		const event = makeEvent({
+			text: repeatCodePoints(
+				"t",
+				BROWSER_FEEDBACK_LIMITS.maxElementTextLength + 1,
+			),
+		});
 		const v = checkFeedbackLimits(event);
 		expect(v).toHaveLength(1);
 		expect(v[0].code).toBe("element_text_too_long");
@@ -247,7 +264,9 @@ describe("checkFeedbackLimits", () => {
 	});
 
 	test("emoji text at maxElementTextLength+1 is rejected", () => {
-		const event = makeEvent({ text: EMOJI.repeat(BROWSER_FEEDBACK_LIMITS.maxElementTextLength + 1) });
+		const event = makeEvent({
+			text: EMOJI.repeat(BROWSER_FEEDBACK_LIMITS.maxElementTextLength + 1),
+		});
 		const v = checkFeedbackLimits(event);
 		expect(v).toHaveLength(1);
 		expect(v[0].code).toBe("element_text_too_long");
@@ -256,12 +275,22 @@ describe("checkFeedbackLimits", () => {
 	// ── element.outerHtml ─────────────────────────────────────────────────
 
 	test("outerHtml at exact maxOuterHtmlLength passes", () => {
-		const event = makeEvent({ outerHtml: repeatCodePoints("<", BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength) });
+		const event = makeEvent({
+			outerHtml: repeatCodePoints(
+				"<",
+				BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength,
+			),
+		});
 		expect(checkFeedbackLimits(event)).toHaveLength(0);
 	});
 
 	test("outerHtml at maxOuterHtmlLength+1 is rejected", () => {
-		const event = makeEvent({ outerHtml: repeatCodePoints("<", BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength + 1) });
+		const event = makeEvent({
+			outerHtml: repeatCodePoints(
+				"<",
+				BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength + 1,
+			),
+		});
 		const v = checkFeedbackLimits(event);
 		expect(v).toHaveLength(1);
 		expect(v[0].code).toBe("outer_html_too_long");
@@ -269,7 +298,9 @@ describe("checkFeedbackLimits", () => {
 	});
 
 	test("emoji outerHtml at maxOuterHtmlLength+1 is rejected", () => {
-		const event = makeEvent({ outerHtml: EMOJI.repeat(BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength + 1) });
+		const event = makeEvent({
+			outerHtml: EMOJI.repeat(BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength + 1),
+		});
 		const v = checkFeedbackLimits(event);
 		expect(v).toHaveLength(1);
 		expect(v[0].code).toBe("outer_html_too_long");
@@ -279,14 +310,16 @@ describe("checkFeedbackLimits", () => {
 
 	test("attribute count at exact maxAttributeCount passes", () => {
 		const attrs: Record<string, string> = {};
-		for (let i = 0; i < BROWSER_FEEDBACK_LIMITS.maxAttributeCount; i++) attrs[`a${i}`] = "v";
+		for (let i = 0; i < BROWSER_FEEDBACK_LIMITS.maxAttributeCount; i++)
+			attrs[`a${i}`] = "v";
 		const event = makeEvent({ attributes: attrs });
 		expect(checkFeedbackLimits(event)).toHaveLength(0);
 	});
 
 	test("attribute count at maxAttributeCount+1 is rejected", () => {
 		const attrs: Record<string, string> = {};
-		for (let i = 0; i < BROWSER_FEEDBACK_LIMITS.maxAttributeCount + 1; i++) attrs[`a${i}`] = "v";
+		for (let i = 0; i < BROWSER_FEEDBACK_LIMITS.maxAttributeCount + 1; i++)
+			attrs[`a${i}`] = "v";
 		const event = makeEvent({ attributes: attrs });
 		const v = checkFeedbackLimits(event);
 		expect(v).toHaveLength(1);
@@ -298,14 +331,16 @@ describe("checkFeedbackLimits", () => {
 
 	test("style count at exact maxComputedStyleCount passes", () => {
 		const styles: Record<string, string> = {};
-		for (let i = 0; i < BROWSER_FEEDBACK_LIMITS.maxComputedStyleCount; i++) styles[`p${i}`] = "v";
+		for (let i = 0; i < BROWSER_FEEDBACK_LIMITS.maxComputedStyleCount; i++)
+			styles[`p${i}`] = "v";
 		const event = makeEvent({ computedStyles: styles });
 		expect(checkFeedbackLimits(event)).toHaveLength(0);
 	});
 
 	test("style count at maxComputedStyleCount+1 is rejected", () => {
 		const styles: Record<string, string> = {};
-		for (let i = 0; i < BROWSER_FEEDBACK_LIMITS.maxComputedStyleCount + 1; i++) styles[`p${i}`] = "v";
+		for (let i = 0; i < BROWSER_FEEDBACK_LIMITS.maxComputedStyleCount + 1; i++)
+			styles[`p${i}`] = "v";
 		const event = makeEvent({ computedStyles: styles });
 		const v = checkFeedbackLimits(event);
 		expect(v).toHaveLength(1);
@@ -317,10 +352,14 @@ describe("checkFeedbackLimits", () => {
 
 	test("multiple fields over limit produce multiple violations", () => {
 		const attrs: Record<string, string> = {};
-		for (let i = 0; i < BROWSER_FEEDBACK_LIMITS.maxAttributeCount + 1; i++) attrs[`a${i}`] = "v";
+		for (let i = 0; i < BROWSER_FEEDBACK_LIMITS.maxAttributeCount + 1; i++)
+			attrs[`a${i}`] = "v";
 		const event = makeEvent({
 			note: repeatCodePoints("n", BROWSER_FEEDBACK_LIMITS.maxNoteLength + 1),
-			outerHtml: repeatCodePoints("<", BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength + 1),
+			outerHtml: repeatCodePoints(
+				"<",
+				BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength + 1,
+			),
 			attributes: attrs,
 		});
 		const v = checkFeedbackLimits(event);

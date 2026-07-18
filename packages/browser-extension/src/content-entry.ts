@@ -1,9 +1,8 @@
 import type {
-	BatchFeedback,
 	BrowserFeedbackEvent,
 	DomSelectionFeedback,
-	PageScreenshotFeedback,
 } from "@oh-my-pi/browser-protocol";
+import { showAnnotator } from "./annotator/canvas";
 import {
 	activatePickerAndCapture,
 	activateRegionCapture,
@@ -14,24 +13,24 @@ import {
 	scrollToPosition,
 	showFixedElements,
 } from "./content-script";
-import { type RegionHandle } from "./picker/region";
+import type { RegionHandle } from "./picker/region";
 import {
+	buildPickedSummary,
+	confirmNote,
 	createToolbar,
-	type ToolbarHandle,
-	type ToolbarState,
 	createToolbarState,
-	showToolbar,
+	enterNoteEditing,
 	hideToolbar,
 	setSessions,
-	enterNoteEditing,
-	confirmNote,
-	buildPickedSummary,
+	showToolbar,
+	type ToolbarHandle,
 	type ToolbarSession,
+	type ToolbarState,
 } from "./toolbar";
-import { showAnnotator } from "./annotator/canvas";
 
 let toolbarState: ToolbarState = createToolbarState();
-let fixedElementsSaved: Array<{ element: Element; original: string }> | null = null;
+let fixedElementsSaved: Array<{ element: Element; original: string }> | null =
+	null;
 
 let activePickerHandle: PickerHandle | RegionHandle | undefined;
 let pendingPickerResponse: ((response: unknown) => void) | undefined;

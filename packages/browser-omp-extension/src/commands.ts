@@ -363,7 +363,11 @@ export async function handleBfCommand(
 			return;
 		}
 		const text = renderBrowserFeedbackContext(latest.payload);
-		if (deps.submitFeedback && "screenshot" in latest.payload && latest.payload.screenshot) {
+		if (
+			deps.submitFeedback &&
+			"screenshot" in latest.payload &&
+			latest.payload.screenshot
+		) {
 			const image = await deps.client
 				?.fetchScreenshot(latest.payload.eventId)
 				.catch(() => undefined);
@@ -417,7 +421,11 @@ export async function handleBfCommand(
 			return;
 		}
 		const text = renderBrowserFeedbackContext(selected.payload);
-		if (deps.submitFeedback && "screenshot" in selected.payload && selected.payload.screenshot) {
+		if (
+			deps.submitFeedback &&
+			"screenshot" in selected.payload &&
+			selected.payload.screenshot
+		) {
 			const image = await deps.client
 				?.fetchScreenshot(selected.payload.eventId)
 				.catch(() => undefined);

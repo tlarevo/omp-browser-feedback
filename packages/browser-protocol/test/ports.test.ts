@@ -10,11 +10,7 @@ import * as path from "node:path";
 describe("magic constants must come from protocol", () => {
 	const root = path.resolve(import.meta.dir, "..", "..", "..");
 
-	function assertNoHardcoded(
-		file: string,
-		pattern: RegExp,
-		msg: string,
-	) {
+	function assertNoHardcoded(file: string, pattern: RegExp, msg: string) {
 		const content = fs.readFileSync(file, "utf-8");
 		const lines = content.split("\n");
 		for (const line of lines) {

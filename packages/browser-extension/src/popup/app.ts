@@ -1,4 +1,9 @@
-import { type BrowserSessionRegistration, DEFAULT_BROWSER_BROKER_PORT_RANGE, parsePortRange, portsInRange } from "@oh-my-pi/browser-protocol";
+import {
+	type BrowserSessionRegistration,
+	DEFAULT_BROWSER_BROKER_PORT_RANGE,
+	parsePortRange,
+	portsInRange,
+} from "@oh-my-pi/browser-protocol";
 import { listSessions, redeemPairingCode } from "../background";
 import {
 	type BasketState,
@@ -97,7 +102,9 @@ async function setBadgeBackgroundColor(color: string): Promise<void> {
 	});
 }
 
-const DEFAULT_PORTS: number[] = portsInRange(parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE));
+const DEFAULT_PORTS: number[] = portsInRange(
+	parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE),
+);
 
 function isUnauthorizedError(errorMessage: string | undefined): boolean {
 	return Boolean(

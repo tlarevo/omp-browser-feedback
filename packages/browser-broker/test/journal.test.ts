@@ -22,9 +22,7 @@ function encodedChannelId(channelId: string): string {
 	return Buffer.from(channelId, "utf8").toString("base64url");
 }
 
-async function makeStore(
-	bounds?: Partial<JournalBounds>,
-) {
+async function makeStore(bounds?: Partial<JournalBounds>) {
 	const dir = await fsp.mkdtemp(path.join("/tmp", "omp-journal-test-"));
 	dirs.push(dir);
 	const store = new JournalStore(dir, {
@@ -115,9 +113,7 @@ describe("JournalStore", () => {
 
 		const compacted = store.compact("ch");
 		expect(compacted).toHaveLength(1);
-		expect(compacted[0].type === "event" && compacted[0].eventId).toBe(
-			"evt-2",
-		);
+		expect(compacted[0].type === "event" && compacted[0].eventId).toBe("evt-2");
 	});
 
 	test("compact is safe on empty channel", async () => {
@@ -189,8 +185,12 @@ describe("JournalStore", () => {
 
 		// First 2 events loaded; third (corrupted) dropped.
 		expect(store.list("ch")).toHaveLength(2);
-		expect(store.list("ch")[0].type === "event" && store.list("ch")[0].eventId).toBe("evt-1");
-		expect(store.list("ch")[1].type === "event" && store.list("ch")[1].eventId).toBe("evt-2");
+		expect(
+			store.list("ch")[0].type === "event" && store.list("ch")[0].eventId,
+		).toBe("evt-1");
+		expect(
+			store.list("ch")[1].type === "event" && store.list("ch")[1].eventId,
+		).toBe("evt-2");
 	});
 	test("appendAck is a no-op for unknown eventIds (no pre-ack of future events)", async () => {
 		const { store } = await makeStore();
@@ -316,7 +316,9 @@ describe("JournalStore", () => {
 		const { store, dir } = await makeStore();
 		await store.appendEvent("ch/special", event("evt-1", "ch/special"));
 
-		const files = fs.readdirSync(dir).filter((f: string) => f.endsWith(".jsonl"));
+		const files = fs
+			.readdirSync(dir)
+			.filter((f: string) => f.endsWith(".jsonl"));
 		expect(files).toHaveLength(1);
 		expect(files[0]).not.toContain("/");
 	});

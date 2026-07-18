@@ -82,7 +82,7 @@ function renderRecord(record: Record<string, string>): string {
 	return JSON.stringify(Object.fromEntries(entries.slice(0, 40)), null, 2);
 }
 
-function renderAccessibility(
+function _renderAccessibility(
 	accessibility: DomSelectionFeedback["element"]["accessibility"],
 ): string {
 	if (!accessibility) return "";
@@ -111,7 +111,7 @@ function renderDomSelection(event: DomSelectionFeedback): string {
 	const accessibility = event.element.accessibility
 		? JSON.stringify(event.element.accessibility, null, 2)
 		: "{}";
-	const component = event.element.component
+	const _component = event.element.component
 		? event.element.component.ancestors
 				.map((a) => (a.source ? `${a.name} (${a.source})` : a.name))
 				.join(" › ")
@@ -133,7 +133,9 @@ function renderDomSelection(event: DomSelectionFeedback): string {
 		`- Selector: ${event.element.selector}`,
 		...(event.element.xpath ? [`- XPath: ${event.element.xpath}`] : []),
 		`- Tag: ${event.element.tagName}`,
-		...(event.element.text ? [`- Text: ${truncate(event.element.text, MAX_TEXT)}`] : []),
+		...(event.element.text
+			? [`- Text: ${truncate(event.element.text, MAX_TEXT)}`]
+			: []),
 		`- Bounds: ${event.element.bounds.x}, ${event.element.bounds.y}, ${event.element.bounds.width}, ${event.element.bounds.height}`,
 		"",
 		`HTML`,
