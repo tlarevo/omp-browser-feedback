@@ -1,8 +1,11 @@
 import {
+	BROWSER_FEEDBACK_LIMITS,
 	BROWSER_PROTOCOL_VERSION,
 	type BrowserElementContext,
 	type BrowserFeedbackEvent,
 	type BrowserPageContext,
+	capEntriesByPriority,
+	truncateToCodePoints,
 } from "@oh-my-pi/browser-protocol";
 import { activatePicker, type PickerHandle } from "./picker/overlay";
 import { generateSelector } from "./picker/selectors";
@@ -38,6 +41,23 @@ const DEFAULT_STYLE_PROPERTIES = [
 	"font-weight",
 ];
 
+/**
+ * Attribute capture priority. Attributes listed here are kept first when the
+ * attribute count exceeds the declared cap; remaining attributes follow in DOM
+ * order.
+ */
+const CAPTURE_ATTRIBUTE_PRIORITY = [
+	"id",
+	"data-testid",
+	"data-test",
+	"aria-label",
+	"name",
+	"type",
+	"href",
+	"role",
+	"class",
+] as const;
+
 export function summarizePickedElement(element: Element): PickedElementSummary {
 	const text = element.textContent?.trim();
 	return {
@@ -72,24 +92,43 @@ export function captureElementContext(
 
 	const computedStyles: Record<string, string> = {};
 	const styles = win.getComputedStyle(element);
-	for (const property of options.styleProperties ?? DEFAULT_STYLE_PROPERTIES) {
+	const styleProperties = options.styleProperties ?? DEFAULT_STYLE_PROPERTIES;
+	for (const property of styleProperties) {
 		computedStyles[property] = styles.getPropertyValue(property);
 	}
 
-	const text = element.textContent?.trim();
+	const rawText = element.textContent?.trim();
+	const text =
+		rawText !== undefined && rawText.length > 0
+			? truncateToCodePoints(
+					rawText,
+					BROWSER_FEEDBACK_LIMITS.maxElementTextLength,
+				)
+			: undefined;
 	return {
 		selector: generateSelector(element),
 		tagName: element.tagName,
 		...(text ? { text } : {}),
-		outerHtml: element.outerHTML,
-		attributes,
+		outerHtml: truncateToCodePoints(
+			element.outerHTML,
+			BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength,
+		),
+		attributes: capEntriesByPriority(
+			attributes,
+			CAPTURE_ATTRIBUTE_PRIORITY,
+			BROWSER_FEEDBACK_LIMITS.maxAttributeCount,
+		),
 		bounds: {
 			x: bounds.x,
 			y: bounds.y,
 			width: bounds.width,
 			height: bounds.height,
 		},
-		computedStyles,
+		computedStyles: capEntriesByPriority(
+			computedStyles,
+			styleProperties,
+			BROWSER_FEEDBACK_LIMITS.maxComputedStyleCount,
+		),
 	};
 }
 
