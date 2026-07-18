@@ -53,6 +53,9 @@ export function defaultDiscoveryPath(): string {
 export function defaultPairingRegistryPath(): string {
 	return path.join(os.homedir(), ".omp", "browser-pairing-registry.json");
 }
+export function defaultDeliveryPath(): string {
+	return path.join(os.homedir(), ".omp", "browser-feedback-delivery.json");
+}
 
 export function resolveBrokerPorts(options: BrokerPortOptions = {}): number[] {
 	if (options.port !== undefined) return [options.port];

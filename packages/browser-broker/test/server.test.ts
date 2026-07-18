@@ -23,6 +23,7 @@ async function createServer() {
 		port: 0,
 		authToken: "secret",
 		pairingRegistryPath: path.join(dir, "pairing-registry.json"),
+		deliveryPath: path.join(dir, "delivery.json"),
 	});
 	servers.push(server);
 	return server;

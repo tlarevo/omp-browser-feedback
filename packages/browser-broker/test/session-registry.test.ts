@@ -7,28 +7,34 @@ describe("BrowserSessionRegistry", () => {
 			now: () => "2026-06-27T10:00:00.000Z",
 		});
 
-		registry.register({
-			protocolVersion: 1,
-			sessionId: "a",
-			channelId: "a",
-			displayName: "same",
-			sessionName: "same",
-			cwd: "/a",
-			status: "active",
-			lastActiveAt: "2026-06-27T10:00:00.000Z",
-			processId: 1,
-		});
-		registry.register({
-			protocolVersion: 1,
-			sessionId: "b",
-			channelId: "b",
-			displayName: "same",
-			sessionName: "same",
-			cwd: "/b",
-			status: "active",
-			lastActiveAt: "2026-06-27T10:00:00.000Z",
-			processId: 2,
-		});
+		registry.register(
+			{
+				protocolVersion: 1,
+				sessionId: "a",
+				channelId: "a",
+				displayName: "same",
+				sessionName: "same",
+				cwd: "/a",
+				status: "active",
+				lastActiveAt: "2026-06-27T10:00:00.000Z",
+				processId: 1,
+			},
+			1,
+		);
+		registry.register(
+			{
+				protocolVersion: 1,
+				sessionId: "b",
+				channelId: "b",
+				displayName: "same",
+				sessionName: "same",
+				cwd: "/b",
+				status: "active",
+				lastActiveAt: "2026-06-27T10:00:00.000Z",
+				processId: 2,
+			},
+			1,
+		);
 
 		expect(registry.getBySessionId("a")?.cwd).toBe("/a");
 		expect(registry.getBySessionId("b")?.cwd).toBe("/b");
@@ -39,17 +45,20 @@ describe("BrowserSessionRegistry", () => {
 			now: () => "2026-06-27T10:00:00.000Z",
 		});
 
-		registry.register({
-			protocolVersion: 1,
-			sessionId: "ses_1",
-			channelId: "ses_1",
-			displayName: "OMP",
-			sessionName: "OMP",
-			cwd: "/repo",
-			status: "active",
-			lastActiveAt: "2026-06-27T10:00:00.000Z",
-			processId: 1,
-		});
+		registry.register(
+			{
+				protocolVersion: 1,
+				sessionId: "ses_1",
+				channelId: "ses_1",
+				displayName: "OMP",
+				sessionName: "OMP",
+				cwd: "/repo",
+				status: "active",
+				lastActiveAt: "2026-06-27T10:00:00.000Z",
+				processId: 1,
+			},
+			1,
+		);
 
 		registry.markDisconnected("ses_1");
 

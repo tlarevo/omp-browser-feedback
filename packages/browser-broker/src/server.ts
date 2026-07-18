@@ -3,15 +3,21 @@ import {
 	BROWSER_BROKER_SERVICE,
 	BROWSER_FEEDBACK_LIMITS,
 	BROWSER_PROTOCOL_VERSION,
+	BROWSER_PROTOCOL_VERSIONS,
 	type BrowserFeedbackEvent,
+	type BrowserProtocolVersion,
 	checkFeedbackLimits,
+	downgradeToV1,
+	inferProtocolVersion,
+	negotiateProtocolVersion,
 	utf8ByteLength,
+	validateFeedbackAck,
 	validateFeedbackEvent,
 	validateSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
 import type { Server } from "bun";
 import { isAuthorizedBrowserRequest, isAuthorizedRequest } from "./auth";
-import { defaultPairingRegistryPath } from "./discovery";
+import { defaultDeliveryPath, defaultPairingRegistryPath } from "./discovery";
 import { InMemoryFeedbackStore } from "./feedback-store";
 import { createPairingStore } from "./pairing-store";
 import { BrowserScreenshotStore } from "./screenshots";
@@ -29,6 +35,8 @@ export interface BrowserBrokerServerOptions {
 	pairingRegistryPath?: string;
 	screenshotRootDir?: string;
 	maxScreenshotBytes?: number;
+	/** Path for durable pending-event persistence. */
+	deliveryPath?: string;
 }
 
 export interface BrowserBrokerServer {
@@ -93,17 +101,18 @@ async function parseFeedbackRequest(
 	if (raw.byteLength > BROWSER_FEEDBACK_LIMITS.maxMultipartBytes) {
 		throw new PayloadTooLargeError("Multipart feedback exceeds byte limit");
 	}
-	let form: FormData;
-	try {
-		form = await new Response(raw, {
-			headers: { "content-type": contentType },
-		}).formData();
-	} catch {
-		throw new InvalidFeedbackError("Malformed multipart body");
-	}
+	const form = await new Response(raw, {
+		headers: { "content-type": contentType },
+	})
+		.formData()
+		.catch(() => {
+			throw new InvalidFeedbackError("Malformed multipart body");
+		});
 	const eventPart = form.get("event");
 	if (typeof eventPart !== "string") {
-		throw new InvalidFeedbackError("Multipart feedback requires an event JSON part");
+		throw new InvalidFeedbackError(
+			"Multipart feedback requires an event JSON part",
+		);
 	}
 	if (utf8ByteLength(eventPart) > BROWSER_FEEDBACK_LIMITS.maxEventBytes) {
 		throw new PayloadTooLargeError("Feedback JSON exceeds byte limit");
@@ -147,6 +156,11 @@ async function resolvePort(host: string, port: number): Promise<number> {
 	});
 }
 
+const LOCAL_VERSION_RANGE = {
+	min: BROWSER_PROTOCOL_VERSIONS[0],
+	max: BROWSER_PROTOCOL_VERSIONS[BROWSER_PROTOCOL_VERSIONS.length - 1],
+} as const;
+
 export async function createBrowserBrokerServer(
 	options: BrowserBrokerServerOptions,
 ): Promise<BrowserBrokerServer> {
@@ -157,6 +171,7 @@ export async function createBrowserBrokerServer(
 	const registry = new BrowserSessionRegistry();
 	const feedback = new InMemoryFeedbackStore({
 		maxEventsPerChannel: options.maxEventsPerChannel ?? 50,
+		deliveryPath: options.deliveryPath ?? defaultDeliveryPath(),
 	});
 	const screenshots = new BrowserScreenshotStore({
 		rootDir: options.screenshotRootDir ?? "/tmp/omp-browser-screenshots",
@@ -213,6 +228,9 @@ export async function createBrowserBrokerServer(
 				return jsonResponse({
 					service: BROWSER_BROKER_SERVICE,
 					protocol_version: BROWSER_PROTOCOL_VERSION,
+					minProtocolVersion: BROWSER_PROTOCOL_VERSIONS[0],
+					protocolVersion:
+						BROWSER_PROTOCOL_VERSIONS[BROWSER_PROTOCOL_VERSIONS.length - 1],
 					broker_id: "local",
 				});
 			}
@@ -400,7 +418,20 @@ export async function createBrowserBrokerServer(
 						{ status: 400 },
 					);
 				}
-				const result = validateFeedbackEvent(parsed.event);
+				const raw = parsed.event;
+				const declaredVersion = inferProtocolVersion(raw);
+				if (declaredVersion === undefined) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "invalid_feedback",
+							message: "Missing or unsupported protocolVersion",
+						},
+						{ status: 400 },
+					);
+				}
+				// Step 1: Validate the Chrome payload at its declared version.
+				const result = validateFeedbackEvent(raw, declaredVersion);
 				if (!result.ok)
 					return jsonResponse(
 						{ ok: false, code: "invalid_feedback", message: result.error },
@@ -419,6 +450,24 @@ export async function createBrowserBrokerServer(
 						},
 						{ status: 422 },
 					);
+				// Step 2: Look up the target OMP session and gate delivery.
+				const session = registry.getByChannelId(result.value.channelId);
+				let wirePayload: BrowserFeedbackEvent = result.value;
+				if (session && session.negotiatedProtocolVersion < 2) {
+					// v1 OMP: attempt to produce a valid v1 wire form.
+					const v1Result = downgradeToV1(result.value);
+					if (!v1Result.ok) {
+						return jsonResponse(
+							{
+								ok: false,
+								code: "omp_upgrade_required",
+								message: `Target OMP session negotiates protocol ${session.negotiatedProtocolVersion}; event has no v1 representation: ${v1Result.error}. Upgrade OMP to receive this event.`,
+							},
+							{ status: 400 },
+						);
+					}
+					wirePayload = v1Result.value;
+				}
 				let event: BrowserFeedbackEvent = result.value;
 				if (parsed.screenshotBytes && event.screenshot) {
 					const saved = await screenshots.save({
@@ -430,6 +479,12 @@ export async function createBrowserBrokerServer(
 						...event,
 						screenshot: { ...event.screenshot, ref: saved.ref },
 					};
+					if (wirePayload.screenshot) {
+						wirePayload = {
+							...wirePayload,
+							screenshot: { ...wirePayload.screenshot, ref: saved.ref },
+						};
+					}
 				}
 				feedback.add({
 					channelId: event.channelId,
@@ -437,8 +492,15 @@ export async function createBrowserBrokerServer(
 					createdAt: event.createdAt,
 					payload: event,
 				});
-				const session = registry.getByChannelId(event.channelId);
-				if (session) websockets.sendFeedback(session.sessionId, event);
+				if (session) {
+					// Send the wire-appropriate payload to the OMP subscriber.
+					websockets.sendFeedback(session.sessionId, wirePayload);
+					// v1 legacy: mark-on-send (not crash-safe).
+					// v2: remains pending until ACK from OMP.
+					if (session.negotiatedProtocolVersion === 1) {
+						feedback.markDelivered(session.channelId, event.eventId);
+					}
+				}
 				return jsonResponse({ ok: true, eventId: event.eventId });
 			}
 
@@ -457,7 +519,36 @@ export async function createBrowserBrokerServer(
 				request.method === "POST" &&
 				url.pathname === "/api/sessions/register"
 			) {
-				const result = validateSessionRegistration(await readJson(request));
+				const raw = await readJson(request);
+				const declaredVersion = inferProtocolVersion(raw);
+				if (declaredVersion === undefined) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "invalid_session",
+							message: "Missing or unsupported protocolVersion",
+						},
+						{ status: 400 },
+					);
+				}
+				const negotiated = negotiateProtocolVersion(LOCAL_VERSION_RANGE, {
+					min: declaredVersion,
+					max: declaredVersion,
+				});
+				if (negotiated === undefined) {
+					return jsonResponse(
+						{
+							ok: false,
+							code: "protocol_version_unsupported",
+							message: `No overlapping protocol version (local [${LOCAL_VERSION_RANGE.min}, ${LOCAL_VERSION_RANGE.max}], remote [${declaredVersion}, ${declaredVersion}])`,
+						},
+						{ status: 400 },
+					);
+				}
+				const result = validateSessionRegistration(
+					raw,
+					negotiated as BrowserProtocolVersion,
+				);
 				if (!result.ok)
 					return jsonResponse(
 						{ ok: false, code: "invalid_session", message: result.error },
@@ -465,7 +556,10 @@ export async function createBrowserBrokerServer(
 					);
 				return jsonResponse({
 					ok: true,
-					session: registry.register(result.value),
+					session: registry.register(
+						result.value,
+						negotiated as BrowserProtocolVersion,
+					),
 				});
 			}
 
@@ -547,19 +641,44 @@ export async function createBrowserBrokerServer(
 					lastActiveAt: new Date().toISOString(),
 				});
 				if (!session) return;
-				for (const event of feedback.list(session.channelId)) {
-					if (event.payload)
-						websockets.sendFeedbackToSocket(
-							socket,
-							event.payload as BrowserFeedbackEvent,
-						);
+				const pending = feedback.pendingByChannel(session.channelId);
+				for (const stored of pending) {
+					if (!stored.payload) continue;
+					const original = stored.payload as BrowserFeedbackEvent;
+					let wirePayload: BrowserFeedbackEvent = original;
+					if (session.negotiatedProtocolVersion < 2) {
+						// v1 OMP: downgrade to validated v1 wire form.
+						const v1Result = downgradeToV1(original);
+						if (!v1Result.ok) continue;
+						wirePayload = v1Result.value;
+					}
+					websockets.sendFeedbackToSocket(socket, wirePayload);
+					// v1 legacy: mark-on-send (not crash-safe).
+					// v2: stays pending until ACK.
+					if (session.negotiatedProtocolVersion === 1) {
+						feedback.markDelivered(session.channelId, stored.eventId);
+					}
 				}
 			},
 			close(socket) {
 				websockets.remove(socket);
 				registry.markDisconnected(socket.data.sessionId);
 			},
-			message() {},
+			message(socket, data) {
+				let msg: unknown;
+				try {
+					msg = JSON.parse(String(data));
+				} catch {
+					return;
+				}
+				const ack = validateFeedbackAck(msg);
+				if (!ack.ok) return;
+				const session = registry.getBySessionId(socket.data.sessionId);
+				if (!session) return;
+				// Only v2 sessions send ACKs; ignore from v1.
+				if (session.negotiatedProtocolVersion < 2) return;
+				feedback.markDelivered(session.channelId, ack.value.eventId);
+			},
 		},
 	});
 

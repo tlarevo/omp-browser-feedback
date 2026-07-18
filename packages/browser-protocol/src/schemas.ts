@@ -1,106 +1,26 @@
-import { type } from "arktype";
-import { BROWSER_PROTOCOL_VERSION } from "./version";
+/**
+ * Backward-compatible re-exports.
+ *
+ * The original single-version schemas are now the v2 schemas, which is the
+ * current highest version.  Prefer importing from `./v1` or `./v2` directly
+ * in new code.
+ */
 
-const nonEmptyString = type("string").atLeastLength(1);
-
-export const browserSessionStatusSchema = type(
-	"'active' | 'idle' | 'disconnected'",
-);
-
-export const browserSessionRegistrationSchema = type({
-	"+": "reject",
-	protocolVersion: type.enumerated(BROWSER_PROTOCOL_VERSION),
-	sessionId: nonEmptyString,
-	channelId: nonEmptyString,
-	sessionName: nonEmptyString,
-	displayName: nonEmptyString,
-	cwd: nonEmptyString,
-	"projectName?": "string",
-	"gitBranch?": "string",
-	"urlPatterns?": nonEmptyString.array(),
-	status: browserSessionStatusSchema,
-	lastActiveAt: nonEmptyString,
-	processId: "number.integer",
-});
-
-const viewportSchema = type({
-	"+": "reject",
-	width: "number",
-	height: "number",
-	devicePixelRatio: "number",
-});
-
-const pageSchema = type({
-	"+": "reject",
-	url: nonEmptyString,
-	title: "string",
-	viewport: viewportSchema,
-});
-
-const boundsSchema = type({
-	"+": "reject",
-	x: "number",
-	y: "number",
-	width: "number",
-	height: "number",
-});
-
-const accessibilitySchema = type({
-	"+": "reject",
-	"role?": "string",
-	"name?": "string",
-	"description?": "string",
-});
-
-const stringRecordSchema = type({ "[string]": "string" });
-
-const elementSchema = type({
-	"+": "reject",
-	selector: nonEmptyString,
-	"xpath?": "string",
-	tagName: nonEmptyString,
-	"text?": "string",
-	outerHtml: "string",
-	attributes: stringRecordSchema,
-	bounds: boundsSchema,
-	computedStyles: stringRecordSchema,
-	"accessibility?": accessibilitySchema,
-});
-
-const screenshotSchema = type({
-	"+": "reject",
-	kind: "'full-visible-tab' | 'crop'",
-	ref: nonEmptyString,
-	mimeType: "'image/png' | 'image/jpeg'",
-	width: "number",
-	height: "number",
-});
-
-export const domSelectionFeedbackSchema = type({
-	"+": "reject",
-	protocolVersion: type.enumerated(BROWSER_PROTOCOL_VERSION),
-	eventId: nonEmptyString,
-	type: "'dom.selection'",
-	channelId: nonEmptyString,
-	createdAt: nonEmptyString,
-	page: pageSchema,
-	element: elementSchema,
-	"note?": "string",
-	"screenshot?": screenshotSchema,
-});
-
-export const pageScreenshotFeedbackSchema = type({
-	"+": "reject",
-	protocolVersion: type.enumerated(BROWSER_PROTOCOL_VERSION),
-	eventId: nonEmptyString,
-	type: "'page.screenshot'",
-	channelId: nonEmptyString,
-	createdAt: nonEmptyString,
-	page: pageSchema,
-	"note?": "string",
-	screenshot: screenshotSchema,
-});
-
-export const browserFeedbackEventSchema = domSelectionFeedbackSchema.or(
-	pageScreenshotFeedbackSchema,
-);
+export {
+	v1BrowserFeedbackEventSchema,
+	v1DomSelectionFeedbackSchema,
+	v1PageScreenshotFeedbackSchema,
+	v1SessionRegistrationSchema,
+} from "./v1/schemas";
+export {
+	v2BrowserFeedbackAckSchema,
+	v2BrowserFeedbackEventSchema as browserFeedbackEventSchema,
+	v2BrowserFeedbackEventSchema,
+	v2DomSelectionFeedbackSchema as domSelectionFeedbackSchema,
+	v2DomSelectionFeedbackSchema,
+	v2PageScreenshotFeedbackSchema as pageScreenshotFeedbackSchema,
+	v2PageScreenshotFeedbackSchema,
+	v2SessionRegistrationSchema as browserSessionRegistrationSchema,
+	v2SessionRegistrationSchema,
+	v2SessionStatusSchema as browserSessionStatusSchema,
+} from "./v2/schemas";
