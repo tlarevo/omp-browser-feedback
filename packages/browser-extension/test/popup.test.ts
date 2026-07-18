@@ -121,6 +121,19 @@ describe("renderPopup", () => {
 		root.querySelector("button")?.click();
 		expect(picked).toBe("ses_2");
 	});
+	test("renders a hint message from the background shortcut handler", () => {
+		const { root } = documentWithRoot();
+		renderPopup(root, {
+			kind: "hint",
+			message: "Select a session to arm the picker shortcut.",
+		});
+		expect(root.textContent).toContain(
+			"Select a session to arm the picker shortcut.",
+		);
+		// Hint view should not show session list or picker button
+		expect(root.querySelector("ul")).toBeNull();
+		expect(root.querySelector("button")).toBeNull();
+	});
 });
 
 describe("ensureBrowserInstallId", () => {

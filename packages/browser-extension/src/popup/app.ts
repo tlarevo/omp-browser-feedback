@@ -159,6 +159,20 @@ async function initPopup(): Promise<void> {
 			window.close();
 		},
 	};
+	// If background wrote a pickerHint (e.g. shortcut fired with no session),
+	// display it as a banner and clear the key so subsequent opens are clean.
+	const hintKey = "pickerHint";
+	const hintRaw = await chrome.storage.local.get([hintKey]);
+	const hintMessage =
+		typeof hintRaw[hintKey] === "string" ? hintRaw[hintKey] : undefined;
+	if (hintMessage) {
+		await chrome.storage.local.remove([hintKey]);
+		const banner = appRoot.ownerDocument.createElement("p");
+		banner.textContent = hintMessage;
+		banner.style.cssText =
+			"margin:0 0 8px;padding:6px 8px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;font-size:13px;";
+		appRoot.prepend(banner);
+	}
 
 	async function refreshFromBroker(): Promise<void> {
 		const brokerResult = await sendToBackground<DiscoverBrokerResponse>({

@@ -39,6 +39,7 @@ export async function ensureBrowserInstallId(): Promise<string> {
 }
 
 export type PopupState =
+	| { kind: "hint"; message: string }
 	| { kind: "no-broker"; attemptedPorts: number[] }
 	| { kind: "unpaired"; baseUrl: string }
 	| { kind: "pairing-error"; baseUrl: string; message: string }
@@ -104,6 +105,11 @@ export function renderPopup(
 ): void {
 	clear(root);
 	const document = root.ownerDocument;
+
+	if (state.kind === "hint") {
+		appendStatus(document, root, state.message);
+		return;
+	}
 
 	if (state.kind === "no-broker") {
 		appendStatus(
