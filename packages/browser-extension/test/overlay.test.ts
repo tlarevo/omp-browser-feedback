@@ -14,7 +14,7 @@ describe("activatePicker", () => {
 		const { document } = domWithButton();
 		const handle = activatePicker(document, {
 			onSelect: () => {},
-			onCancel: () => {},
+			onExit: () => {},
 		});
 		expect(typeof handle.deactivate).toBe("function");
 		handle.deactivate();
@@ -22,13 +22,13 @@ describe("activatePicker", () => {
 
 	test("appends an overlay element to the body on activation", () => {
 		const { document } = domWithButton();
-		activatePicker(document, { onSelect: () => {}, onCancel: () => {} });
+		activatePicker(document, { onSelect: () => {}, onExit: () => {} });
 		const overlay = document.querySelector("[data-omp-picker-overlay]");
 		expect(overlay).not.toBeNull();
 		// Clean up
 		activatePicker(document, {
 			onSelect: () => {},
-			onCancel: () => {},
+			onExit: () => {},
 		}).deactivate();
 	});
 
@@ -36,7 +36,7 @@ describe("activatePicker", () => {
 		const { document } = domWithButton();
 		const handle = activatePicker(document, {
 			onSelect: () => {},
-			onCancel: () => {},
+			onExit: () => {},
 		});
 		expect(document.querySelector("[data-omp-picker-overlay]")).not.toBeNull();
 		handle.deactivate();
@@ -48,7 +48,7 @@ describe("activatePicker", () => {
 		const original = document.body.style.cursor;
 		const handle = activatePicker(document, {
 			onSelect: () => {},
-			onCancel: () => {},
+			onExit: () => {},
 		});
 		expect(document.body.style.cursor).toBe("crosshair");
 		handle.deactivate();
@@ -59,7 +59,7 @@ describe("activatePicker", () => {
 		const { document } = domWithButton();
 		const handle = activatePicker(document, {
 			onSelect: () => {},
-			onCancel: () => {},
+			onExit: () => {},
 		});
 		handle.deactivate();
 		expect(() => handle.deactivate()).not.toThrow();

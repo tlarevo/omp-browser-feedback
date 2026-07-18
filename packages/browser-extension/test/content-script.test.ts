@@ -82,8 +82,11 @@ describe("activatePickerAndCapture", () => {
 		const handle = activatePickerAndCapture(
 			document,
 			{ channelId: "ses_1" },
-			(event) => {
-				result = event;
+			{
+				onPick: (event: any) => {
+					result = event;
+				},
+				onExit: () => {},
 			},
 		);
 
@@ -96,7 +99,7 @@ describe("activatePickerAndCapture", () => {
 		const handle = activatePickerAndCapture(
 			document,
 			{ channelId: "ses_1" },
-			() => {},
+			{ onPick: () => {}, onExit: () => {} },
 		);
 		expect(document.querySelector("[data-omp-picker-overlay]")).not.toBeNull();
 		handle.deactivate();
