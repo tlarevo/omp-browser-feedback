@@ -340,6 +340,40 @@ function isInsideShadowRoot(element: Element): boolean {
  * Generate a unique selector for an element within its own document/shadow root
  * (scoped to that root's querySelector).
  */
+function stableAttributeSelector(element: Element): string | undefined {
+	for (const attribute of PREFERRED_ATTRIBUTES) {
+		const value = element.getAttribute(attribute);
+		if (!value) continue;
+		const selector = quotedAttributeSelector(attribute, value);
+		if (isUnique(element, selector)) return selector;
+	}
+	return undefined;
+}
+
+function stableIdSelector(element: Element): string | undefined {
+	const id = element.id;
+	if (!id || /[:\s]/.test(id)) return undefined;
+	const selector = `#${cssEscape(id)}`;
+	return isUnique(element, selector) ? selector : undefined;
+}
+
+function nthOfTypeSelector(element: Element): string {
+	const tag = element.tagName.toLowerCase();
+	let index = 1;
+	let sibling = element.previousElementSibling;
+	while (sibling) {
+		if (sibling.tagName === element.tagName) index++;
+		sibling = sibling.previousElementSibling;
+	}
+	let siblingsOfType = index;
+	let after = element.nextElementSibling;
+	while (after) {
+		if (after.tagName === element.tagName) siblingsOfType++;
+		after = after.nextElementSibling;
+	}
+	return siblingsOfType === 1 ? tag : `${tag}:nth-of-type(${index})`;
+}
+
 function generateRootScopedSelector(element: Element): string {
 	const stableAttribute = stableAttributeSelector(element);
 	if (stableAttribute) return stableAttribute;

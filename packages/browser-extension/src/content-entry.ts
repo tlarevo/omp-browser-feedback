@@ -170,21 +170,13 @@ chrome.runtime.onMessage.addListener(
 
 			// Activate picker
 			pendingPickerResponse = sendResponse;
-			activePickerHandle = activatePickerAndCapture(
-				document,
-				{ channelId, note },
-				(event: BrowserFeedbackEvent | null) => {
+		activePickerHandle = activatePickerAndCapture(
+			document,
+			{ channelId, note },
+			{
+				onPick(event: BrowserFeedbackEvent) {
 					activePickerHandle = undefined;
-					if (!event) {
-						toolbarState = hideToolbar(toolbarState);
-						toolbarHandle?.remove();
-						toolbarHandle = undefined;
-						if (pendingPickerResponse) {
-							pendingPickerResponse({ ok: false, error: "Picker cancelled" });
-							pendingPickerResponse = undefined;
-						}
-						return;
-					}
+					if (!event) return;
 
 					// Store event for toolbar Send
 					currentPickedEvent = event;
@@ -206,7 +198,18 @@ chrome.runtime.onMessage.addListener(
 						pendingPickerResponse = undefined;
 					}
 				},
-			);
+				onExit() {
+					activePickerHandle = undefined;
+					toolbarState = hideToolbar(toolbarState);
+					toolbarHandle?.remove();
+					toolbarHandle = undefined;
+					if (pendingPickerResponse) {
+						pendingPickerResponse({ ok: false, error: "Picker cancelled" });
+						pendingPickerResponse = undefined;
+					}
+				},
+			},
+		);
 			return true;
 		}
 
