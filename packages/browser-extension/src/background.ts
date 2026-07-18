@@ -1,8 +1,12 @@
 import {
 	BROWSER_BROKER_SERVICE,
-	BROWSER_PROTOCOL_VERSIONS,
+	BROWSER_PROTOCOL_VERSION_RANGE,
 	type BrowserFeedbackEvent,
 	type BrowserSessionRegistration,
+	ENDPOINT_FEEDBACK_SUBMIT,
+	ENDPOINT_HEALTH,
+	ENDPOINT_PAIR_REDEEM,
+	ENDPOINT_SESSIONS_LIST,
 } from "@oh-my-pi/browser-protocol";
 
 export interface BrokerHealth {
@@ -10,6 +14,7 @@ export interface BrokerHealth {
 	protocol_version: number;
 	minProtocolVersion?: number;
 	protocolVersion?: number;
+	protocol_version_range?: { min: number; max: number };
 	broker_id: string;
 }
 
@@ -86,29 +91,34 @@ async function readErrorMessage(
 	return fallback;
 }
 
+function brokerUrl(baseUrl: string, path: string): string {
+	return `${baseUrl.replace(/\/+$/, "")}${path}`;
+}
+
 export async function probeBroker(
 	baseUrl: string,
 	fetchImpl: ExtensionFetch = fetch,
 ): Promise<BrokerHealth | undefined> {
 	try {
-		const response = await fetchImpl(
-			`${baseUrl.replace(/\/+$/, "")}/api/health`,
-		);
+		const response = await fetchImpl(brokerUrl(baseUrl, ENDPOINT_HEALTH.path));
 		if (!response.ok) return undefined;
 		const health = (await response.json()) as BrokerHealth;
 		if (health.service !== BROWSER_BROKER_SERVICE) return undefined;
-		// Overlap-based compatibility: the broker's version range must share
-		// at least one version with Chrome's supported range.
-		// Treat a v1 broker (no min/protocolVersion fields) as [1, 1].
-		const remoteMin = health.minProtocolVersion ?? health.protocol_version;
-		const remoteMax = health.protocolVersion ?? health.protocol_version;
-		// This Chrome producer is v2-only: its generated range is [2, 2].
-		const localMin = BROWSER_PROTOCOL_VERSIONS[0];
-		const localMax =
-			BROWSER_PROTOCOL_VERSIONS[BROWSER_PROTOCOL_VERSIONS.length - 1];
-		const floor = Math.max(localMin, remoteMin);
-		const ceiling = Math.min(localMax, remoteMax);
-		if (floor > ceiling) return undefined;
+		// Check that the extension's protocol version falls within the broker's
+		// advertised range.  A v2 broker advertising [2,2] must be rejected by
+		// this v1 extension.
+		if (health.protocol_version_range) {
+			const { min, max } = health.protocol_version_range;
+			if (
+				BROWSER_PROTOCOL_VERSION_RANGE.min < min ||
+				BROWSER_PROTOCOL_VERSION_RANGE.min > max
+			)
+				return undefined;
+		} else {
+			// Fallback: strict equality for older brokers.
+			if (BROWSER_PROTOCOL_VERSION_RANGE.min !== health.protocol_version)
+				return undefined;
+		}
 		return health;
 	} catch {
 		return undefined;
@@ -131,9 +141,9 @@ export async function redeemPairingCode(
 ): Promise<RedeemPairingCodeResult> {
 	const fetchImpl = options.fetch ?? fetch;
 	const response = await fetchImpl(
-		`${options.baseUrl.replace(/\/+$/, "")}/api/pair`,
+		brokerUrl(options.baseUrl, ENDPOINT_PAIR_REDEEM.path),
 		{
-			method: "POST",
+			method: ENDPOINT_PAIR_REDEEM.method,
 			headers: { "Content-Type": "application/json" },
 			body: JSON.stringify({
 				browserInstallId: options.browserInstallId,
@@ -162,9 +172,9 @@ export async function submitFeedback(
 		form.set("screenshot", options.screenshot, "screenshot.png");
 	}
 	const response = await fetchImpl(
-		`${options.baseUrl.replace(/\/+$/, "")}/api/feedback`,
+		brokerUrl(options.baseUrl, ENDPOINT_FEEDBACK_SUBMIT.path),
 		{
-			method: "POST",
+			method: ENDPOINT_FEEDBACK_SUBMIT.method,
 			headers: { Authorization: `Bearer ${options.capabilityToken}` },
 			body: form,
 		},
@@ -181,8 +191,9 @@ export async function listSessions(
 ): Promise<BrowserSessionRegistration[]> {
 	const fetchImpl = options.fetch ?? fetch;
 	const response = await fetchImpl(
-		`${options.baseUrl.replace(/\/+$/, "")}/api/sessions`,
+		brokerUrl(options.baseUrl, ENDPOINT_SESSIONS_LIST.path),
 		{
+			method: ENDPOINT_SESSIONS_LIST.method,
 			headers: { Authorization: `Bearer ${options.capabilityToken}` },
 		},
 	);

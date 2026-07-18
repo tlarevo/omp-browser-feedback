@@ -8,7 +8,7 @@ import {
 	truncateToCodePoints,
 } from "@oh-my-pi/browser-protocol";
 import { activatePicker, type PickerHandle } from "./picker/overlay";
-import { generateSelector } from "./picker/selectors";
+import { generateSelector, generateSelectorSegments, isInShadowContext } from "./picker/selectors";
 
 export type { PickerHandle };
 
@@ -129,6 +129,8 @@ export function captureElementContext(
 			styleProperties,
 			BROWSER_FEEDBACK_LIMITS.maxComputedStyleCount,
 		),
+		selectorSegments: generateSelectorSegments(element),
+		shadowRoot: isInShadowContext(element),
 	};
 }
 

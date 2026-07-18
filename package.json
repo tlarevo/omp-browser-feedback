@@ -15,12 +15,14 @@
 		}
 	},
 	"scripts": {
-		"check": "biome check .github package.json tsconfig*.json scripts test packages/*/package.json packages/*/tsconfig.json packages/*/src packages/*/test packages/browser-extension/manifest.json && bun run check:types",
+		"check": "biome check .github package.json tsconfig*.json scripts test packages/*/package.json packages/*/tsconfig.json packages/*/src packages/*/test packages/browser-extension/manifest.json && bun run check:types && bun run check:chrome-contract",
 		"check:types": "tsgo -p tsconfig.json --noEmit && bun run --workspaces --if-present check:types",
 		"check:omp-head": "bun scripts/check-against-omp-head.ts",
 		"test": "bun test ./test/*.test.ts && bun run --workspaces --if-present test",
+		"build:omp-extension": "bun --cwd=packages/browser-omp-extension run build",
 		"build:extension": "bun --cwd=packages/browser-extension run build",
-		"build:omp-extension": "bun --cwd=packages/browser-omp-extension run build"
+		"check:chrome-contract": "bun scripts/check-chrome-contract-drift.ts",
+		"generate:chrome-contract": "bun scripts/export-chrome-contract.ts contracts/chrome-contract.json"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "^2.4.6",

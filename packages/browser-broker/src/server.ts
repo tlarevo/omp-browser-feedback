@@ -4,14 +4,29 @@ import {
 	BROWSER_FEEDBACK_LIMITS,
 	BROWSER_PROTOCOL_VERSION,
 	BROWSER_PROTOCOL_VERSIONS,
+	BROWSER_PROTOCOL_VERSION_RANGE,
 	type BrowserFeedbackEvent,
 	type BrowserProtocolVersion,
+	ENDPOINT_FEEDBACK_SUBMIT,
+	ENDPOINT_HEALTH,
+	ENDPOINT_PAIR_OPEN,
+	ENDPOINT_PAIR_REDEEM,
+	ENDPOINT_PAIR_RESET,
+	ENDPOINT_SESSION_DELETE,
+	ENDPOINT_SESSION_FEEDBACK_CLEAR,
+	ENDPOINT_SESSION_FEEDBACK_LATEST,
+	ENDPOINT_SESSION_FEEDBACK_LIST,
+	ENDPOINT_SESSION_REGISTER,
+	ENDPOINT_SESSION_UPDATE,
+	ENDPOINT_SESSIONS_LIST,
+	ENDPOINT_WS_OMP,
 	checkFeedbackLimits,
 	downgradeToV1,
 	inferProtocolVersion,
+	matchEndpoint,
 	negotiateProtocolVersion,
+	templateToRegex,
 	utf8ByteLength,
-	validateFeedbackAck,
 	validateFeedbackEvent,
 	validateSessionRegistration,
 } from "@oh-my-pi/browser-protocol";
@@ -213,7 +228,9 @@ export async function createBrowserBrokerServer(
 			const url = new URL(request.url);
 			registry.prune();
 
-			const wsOmpMatch = url.pathname.match(/^\/ws\/omp\/([^/]+)$/);
+			const wsOmpMatch = url.pathname.match(
+				templateToRegex(ENDPOINT_WS_OMP.path),
+			);
 			if (wsOmpMatch) {
 				const origin = request.headers.get("origin");
 				if (origin !== null && !isAllowedBrowserOrigin(origin)) {
@@ -246,18 +263,25 @@ export async function createBrowserBrokerServer(
 					: new Response("WebSocket upgrade required", { status: 426 });
 			}
 
-			if (request.method === "GET" && url.pathname === "/api/health") {
+			if (
+				request.method === ENDPOINT_HEALTH.method &&
+				url.pathname === ENDPOINT_HEALTH.path
+			) {
 				return jsonResponse({
 					service: BROWSER_BROKER_SERVICE,
 					protocol_version: BROWSER_PROTOCOL_VERSION,
-					minProtocolVersion: BROWSER_PROTOCOL_VERSIONS[0],
-					protocolVersion:
-						BROWSER_PROTOCOL_VERSIONS[BROWSER_PROTOCOL_VERSIONS.length - 1],
+					protocol_version_range: {
+						min: BROWSER_PROTOCOL_VERSION_RANGE.min,
+						max: BROWSER_PROTOCOL_VERSION_RANGE.max,
+					},
 					broker_id: "local",
 				});
 			}
 
-			if (request.method === "POST" && url.pathname === "/api/pair") {
+			if (
+				request.method === ENDPOINT_PAIR_REDEEM.method &&
+				url.pathname === ENDPOINT_PAIR_REDEEM.path
+			) {
 				const origin = request.headers.get("origin");
 				if (origin !== null && !isAllowedBrowserOrigin(origin)) {
 					return jsonResponse(
@@ -312,7 +336,10 @@ export async function createBrowserBrokerServer(
 					pairingStore.validateBrowserCapability,
 				);
 
-			if (request.method === "POST" && url.pathname === "/api/pair/open") {
+			if (
+				request.method === ENDPOINT_PAIR_OPEN.method &&
+				url.pathname === ENDPOINT_PAIR_OPEN.path
+			) {
 				if (!rootAuthorized) {
 					return jsonResponse(
 						{
@@ -347,7 +374,10 @@ export async function createBrowserBrokerServer(
 				return jsonResponse(await pairingStore.issuePairingCode(sessionId));
 			}
 
-			if (request.method === "POST" && url.pathname === "/api/pair/reset") {
+			if (
+				request.method === ENDPOINT_PAIR_RESET.method &&
+				url.pathname === ENDPOINT_PAIR_RESET.path
+			) {
 				if (!rootAuthorized) {
 					return jsonResponse(
 						{
@@ -362,7 +392,10 @@ export async function createBrowserBrokerServer(
 				return jsonResponse({ ok: true });
 			}
 
-			if (request.method === "GET" && url.pathname === "/api/sessions") {
+			if (
+				request.method === ENDPOINT_SESSIONS_LIST.method &&
+				url.pathname === ENDPOINT_SESSIONS_LIST.path
+			) {
 				if (!rootAuthorized && !isBrowserAuthorized()) {
 					return jsonResponse(
 						{
@@ -376,10 +409,12 @@ export async function createBrowserBrokerServer(
 				return jsonResponse({ sessions: registry.list() });
 			}
 
-			const sessionFeedbackMatch = url.pathname.match(
-				/^\/api\/sessions\/([^/]+)\/feedback(?:\/latest)?$/,
-			);
-			if (request.method === "GET" && sessionFeedbackMatch) {
+			const feedbackGetMatch = matchEndpoint(url.pathname, "GET");
+			if (
+				feedbackGetMatch &&
+				(feedbackGetMatch.endpoint === ENDPOINT_SESSION_FEEDBACK_LIST ||
+					feedbackGetMatch.endpoint === ENDPOINT_SESSION_FEEDBACK_LATEST)
+			) {
 				if (!rootAuthorized) {
 					return jsonResponse(
 						{
@@ -391,21 +426,24 @@ export async function createBrowserBrokerServer(
 					);
 				}
 				const session = registry.getBySessionId(
-					decodeURIComponent(sessionFeedbackMatch[1] ?? ""),
+					feedbackGetMatch.params.sessionId,
 				);
 				if (!session)
 					return jsonResponse(
 						{ ok: false, code: "unknown_session", message: "Unknown session" },
 						{ status: 404 },
 					);
-				if (url.pathname.endsWith("/latest"))
+				if (feedbackGetMatch.endpoint === ENDPOINT_SESSION_FEEDBACK_LATEST)
 					return jsonResponse({
 						feedback: feedback.latest(session.channelId) ?? null,
 					});
 				return jsonResponse({ feedback: feedback.list(session.channelId) });
 			}
 
-			if (request.method === "POST" && url.pathname === "/api/feedback") {
+			if (
+				request.method === ENDPOINT_FEEDBACK_SUBMIT.method &&
+				url.pathname === ENDPOINT_FEEDBACK_SUBMIT.path
+			) {
 				if (!rootAuthorized && !isBrowserAuthorized()) {
 					return jsonResponse(
 						{
@@ -593,8 +631,8 @@ export async function createBrowserBrokerServer(
 				});
 			}
 			if (
-				request.method === "POST" &&
-				url.pathname === "/api/sessions/register"
+				request.method === ENDPOINT_SESSION_REGISTER.method &&
+				url.pathname === ENDPOINT_SESSION_REGISTER.path
 			) {
 				const raw = await readJson(request);
 				const declaredVersion = inferProtocolVersion(raw);
@@ -640,9 +678,9 @@ export async function createBrowserBrokerServer(
 				});
 			}
 
-			const sessionMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
-			if (sessionMatch && request.method === "PATCH") {
-				const sessionId = decodeURIComponent(sessionMatch[1] ?? "");
+			const sessionPatch = matchEndpoint(url.pathname, "PATCH");
+			if (sessionPatch?.endpoint === ENDPOINT_SESSION_UPDATE) {
+				const sessionId = sessionPatch.params.sessionId;
 				const update = (await readJson(request)) as Record<string, unknown>;
 				const session = registry.update(sessionId, {
 					...(typeof update.displayName === "string"
@@ -682,18 +720,17 @@ export async function createBrowserBrokerServer(
 				return jsonResponse({ ok: true, session });
 			}
 
-			if (sessionMatch && request.method === "DELETE") {
-				const sessionId = decodeURIComponent(sessionMatch[1] ?? "");
+			const sessionDelete = matchEndpoint(url.pathname, "DELETE");
+			if (sessionDelete?.endpoint === ENDPOINT_SESSION_DELETE) {
+				const sessionId = sessionDelete.params.sessionId;
 				return jsonResponse({
 					ok: true,
 					removed: registry.unregister(sessionId),
 				});
 			}
 
-			if (request.method === "DELETE" && sessionFeedbackMatch) {
-				const session = registry.getBySessionId(
-					decodeURIComponent(sessionFeedbackMatch[1] ?? ""),
-				);
+			if (sessionDelete?.endpoint === ENDPOINT_SESSION_FEEDBACK_CLEAR) {
+				const session = registry.getBySessionId(sessionDelete.params.sessionId);
 				if (!session)
 					return jsonResponse(
 						{ ok: false, code: "unknown_session", message: "Unknown session" },

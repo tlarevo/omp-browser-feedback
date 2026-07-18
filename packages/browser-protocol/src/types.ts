@@ -51,6 +51,11 @@ export interface BrowserAccessibilityContext {
 	description?: string;
 }
 
+export interface SelectorSegment {
+	selector: string;
+	shadowRoot: boolean;
+}
+
 export interface BrowserElementContext {
 	selector: string;
 	xpath?: string;
@@ -61,6 +66,8 @@ export interface BrowserElementContext {
 	bounds: BrowserElementBounds;
 	computedStyles: Record<string, string>;
 	accessibility?: BrowserAccessibilityContext;
+	selectorSegments?: SelectorSegment[];
+	shadowRoot?: boolean;
 }
 
 export interface BrowserScreenshotRef {
