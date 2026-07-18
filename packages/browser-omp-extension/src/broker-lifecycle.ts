@@ -106,6 +106,7 @@ export async function ensureBrokerRunning(
 			host: DEFAULT_BROWSER_BROKER_HOST,
 			port: 0,
 			authToken,
+			maxScreenshotBytes: BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes,
 		});
 	}
 

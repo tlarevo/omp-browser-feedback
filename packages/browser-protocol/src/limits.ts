@@ -11,6 +11,7 @@ export const BROWSER_FEEDBACK_LIMITS = {
 	maxComputedStyleCount: 80,
 	/** Max screenshot binary size, measured in UTF-8/raw bytes. */
 	maxScreenshotBytes: 10 * 1024 * 1024,
+
 	/** Max feedback event JSON container size, measured in UTF-8 bytes. */
 	maxEventBytes: 512 * 1024,
 	/**
@@ -57,7 +58,13 @@ export function truncateToCodePoints(
 	if (points.length <= maxCodePoints) return value;
 	const markerLength = codePointLength(BROWSER_FEEDBACK_TRUNCATION_MARKER);
 	const keep = Math.max(0, maxCodePoints - markerLength);
-	return points.slice(0, keep).join("") + BROWSER_FEEDBACK_TRUNCATION_MARKER;
+	const marker =
+		markerLength <= maxCodePoints
+			? BROWSER_FEEDBACK_TRUNCATION_MARKER
+			: Array.from(BROWSER_FEEDBACK_TRUNCATION_MARKER)
+					.slice(0, maxCodePoints)
+					.join("");
+	return points.slice(0, keep).join("") + marker;
 }
 
 /**

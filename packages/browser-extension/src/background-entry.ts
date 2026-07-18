@@ -1,7 +1,10 @@
-import type {
-	BrowserFeedbackEvent,
-	BrowserSessionRegistration,
-	DomSelectionFeedback,
+import {
+	DEFAULT_BROWSER_BROKER_PORT_RANGE,
+	parsePortRange,
+	portsInRange,
+	type BrowserFeedbackEvent,
+	type BrowserSessionRegistration,
+	type DomSelectionFeedback,
 } from "@oh-my-pi/browser-protocol";
 import {
 	discoverBroker,
@@ -12,7 +15,7 @@ import {
 import { captureAndCrop } from "./screenshot";
 
 const DEFAULT_HOST = "127.0.0.1";
-const DEFAULT_PORTS: number[] = Array.from({ length: 21 }, (_, i) => 4317 + i);
+const DEFAULT_PORTS: number[] = portsInRange(parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE));
 
 type MessageResponse<T> = { ok: true; data: T } | { ok: false; error: string };
 
