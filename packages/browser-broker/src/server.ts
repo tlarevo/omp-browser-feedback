@@ -54,12 +54,7 @@ export interface BrowserBrokerServerOptions {
 	pairingRegistryPath?: string;
 	screenshotRootDir?: string;
 	maxScreenshotBytes?: number;
-	/** Directory for journal persistence and screenshot storage. */
-	dataDir?: string;
-	heartbeatIntervalMs?: number;
-	heartbeatTimeoutMs?: number;
-	idleAfterMs?: number;
-	graceMs?: number;
+	clock?: import("./pairing-store").PairingStoreClock;
 }
 
 export interface BrowserBrokerServer {
@@ -146,7 +141,6 @@ async function parseFeedbackRequest(
 	} catch {
 		throw new InvalidFeedbackError("Malformed event JSON part");
 	}
-<<<<<<< HEAD
 	const screenshotPart = form.get("screenshot");
 	if (screenshotPart instanceof Blob) {
 		const bytes = new Uint8Array(await screenshotPart.arrayBuffer());
@@ -154,7 +148,6 @@ async function parseFeedbackRequest(
 			throw new PayloadTooLargeError("Screenshot exceeds byte limit");
 		}
 		return { event, screenshotBytes: bytes };
-=======
 	const parsed = JSON.parse(eventPart) as Record<string, unknown>;
 
 	if (parsed.type === "batch.feedback") {
@@ -199,7 +192,6 @@ async function parseFeedbackRequest(
 				ref: saved.ref,
 			},
 		};
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 	}
 	return { event };
 }
@@ -267,6 +259,7 @@ export async function createBrowserBrokerServer(
 	const websockets = new BrowserWebSocketRouter();
 	const pairingStore = createPairingStore({
 		registryPath: options.pairingRegistryPath ?? defaultPairingRegistryPath(),
+		...(options.clock ? { clock: options.clock } : {}),
 	});
 	const port = await resolvePort(options.host, options.port);
 
@@ -294,7 +287,7 @@ export async function createBrowserBrokerServer(
 					);
 				}
 				const token = url.searchParams.get("token");
-				if (token !== options.authToken) {
+				if (!token || !safeStringCompare(token, options.authToken)) {
 					return jsonResponse(
 						{
 							ok: false,
@@ -504,7 +497,6 @@ export async function createBrowserBrokerServer(
 						{ status: 401 },
 					);
 				}
-<<<<<<< HEAD
 				let parsed: ParsedFeedbackRequest;
 				try {
 					parsed = await parseFeedbackRequest(request);
@@ -543,31 +535,13 @@ export async function createBrowserBrokerServer(
 				}
 				// Step 1: Validate the Chrome payload at its declared version.
 				const result = validateFeedbackEvent(raw, declaredVersion);
-=======
 				const raw = await readFeedbackRequest(request, screenshots);
 				const result = validateFeedbackEvent(raw);
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 				if (!result.ok)
 					return jsonResponse(
 						{ ok: false, code: "invalid_feedback", message: result.error },
 						{ status: 400 },
 					);
-<<<<<<< HEAD
-				const violations = checkFeedbackLimits(result.value);
-				const violation = violations[0];
-				if (violation)
-					return jsonResponse(
-						{
-							ok: false,
-							code: violation.code,
-							path: violation.path,
-							message: `Field ${violation.path} exceeds its declared limit of ${violation.limit} ${violation.unit}`,
-							violations,
-						},
-						{ status: 422 },
-					);
-				// Step 2: Look up the target OMP session and gate delivery.
-=======
 				if (
 					result.value.type === "batch.feedback" &&
 					result.value.items.length > BATCH_FEEDBACK_LIMITS.maxItems
@@ -587,7 +561,6 @@ export async function createBrowserBrokerServer(
 					createdAt: result.value.createdAt,
 					payload: result.value,
 				});
->>>>>>> tharinduabeydeera/tha-30-extension-batch-feedback-composer-collect-multiple-picks-and
 				const session = registry.getByChannelId(result.value.channelId);
 				let wirePayload: BrowserFeedbackEvent = result.value;
 				if (session && session.negotiatedProtocolVersion < 2) {

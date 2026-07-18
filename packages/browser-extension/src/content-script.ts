@@ -15,8 +15,64 @@ import {
 } from "./picker/region";
 import { generateSelector, generateSelectorSegments, isInShadowContext } from "./picker/selectors";
 
-export type { PickerHandle, RegionHandle };
-export { activateRegionCapture };
+const SENSITIVE_ATTR_NAMES: Record<string, true> = {
+	value: true,
+	placeholder: true,
+	"aria-placeholder": true,
+};
+
+const SENSITIVE_INPUT_TYPES: Record<string, true> = { password: true, hidden: true };
+const CC_AUTOCOMPLETE_RE = /^cc-/i;
+const SECRET_LIKE_VALUE_RE =
+	/^(?:[A-Za-z0-9+/]{40,}={0,2}|[0-9a-f]{32,}|[A-F0-9-]{36}|AKIA[0-9A-Z]{16}|(?:sk|pk)[_-][A-Za-z0-9]{20,})$/;
+
+export function redactSensitiveAttributes(
+	attributes: Record<string, string>,
+	tagName: string,
+	inputType?: string,
+): Record<string, string> {
+	const out: Record<string, string> = {};
+	for (const [key, val] of Object.entries(attributes)) {
+		const lower = key.toLowerCase();
+		if (
+			lower in SENSITIVE_ATTR_NAMES &&
+			(lower !== "value" ||
+				tagName === "INPUT" &&
+					(inputType === undefined ||
+						inputType in SENSITIVE_INPUT_TYPES))
+		) {
+			out[key] = "[REDACTED]";
+			continue;
+		}
+		if (
+			lower === "autocomplete" &&
+			CC_AUTOCOMPLETE_RE.test(val)
+		) {
+			out[key] = "[REDACTED]";
+			continue;
+		}
+		if (SECRET_LIKE_VALUE_RE.test(val)) {
+			out[key] = "[REDACTED]";
+			continue;
+		}
+		out[key] = val;
+	}
+	return out;
+}
+
+export function redactOuterHtml(html: string): string {
+	let result = html;
+	result = result.replace(
+		/(<input\b[^>]*?\btype\s*=\s*["']?(?:password|hidden)["']?[^>]*?)\bvalue\s*=\s*["'][^"']*["']/gi,
+		"$1value=\"[REDACTED]\"",
+	);
+	result = result.replace(
+		/(<input\b[^>]*?\bautocomplete\s*=\s*["']?)cc-[^"']*["']/gi,
+		"$1[REDACTED]\"",
+	);
+	return result;
+}
+export type { PickerHandle };
 
 export interface PickedElementSummary {
 	selector: string;
@@ -355,19 +411,18 @@ export function captureElementContext(
 	const xpath = generateXpath(element);
 	const accessibility = captureAccessibility(element);
 
+	const text = element.textContent?.trim();
+	const redactedAttributes = redactSensitiveAttributes(
+		attributes,
+		element.tagName,
+		attributes.type,
+	);
 	return {
 		selector: generateSelector(element),
 		tagName: element.tagName,
 		...(text ? { text } : {}),
-		outerHtml: truncateToCodePoints(
-			element.outerHTML,
-			BROWSER_FEEDBACK_LIMITS.maxOuterHtmlLength,
-		),
-		attributes: capEntriesByPriority(
-			attributes,
-			CAPTURE_ATTRIBUTE_PRIORITY,
-			BROWSER_FEEDBACK_LIMITS.maxAttributeCount,
-		),
+		outerHtml: redactOuterHtml(element.outerHTML),
+		attributes: redactedAttributes,
 		bounds: {
 			x: bounds.x,
 			y: bounds.y,
