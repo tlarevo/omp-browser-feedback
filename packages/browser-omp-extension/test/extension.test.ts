@@ -8,6 +8,12 @@ import { BrowserBrokerClient } from "../src/client";
 import { handleBfCommand } from "../src/commands";
 import browserFeedbackExtension, { downscaleImage } from "../src/extension";
 
+let hasPil = false;
+try {
+	execSync("python3 -c 'from PIL import Image'", { stdio: "ignore" });
+	hasPil = true;
+} catch {}
+
 interface NotifyHarness {
 	notify: (message: string) => void;
 	last(): string;
@@ -750,7 +756,7 @@ describe("THA-217 reconnect hardening", () => {
 	});
 });
 
-describe("downscaleImage", () => {
+describe.skipIf(!hasPil)("downscaleImage", () => {
 	async function makePng(width: number, height: number): Promise<Uint8Array> {
 		const tmpFile = `/tmp/omp-test-${width}x${height}.png`;
 		execSync(
