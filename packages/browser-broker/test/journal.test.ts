@@ -241,16 +241,18 @@ describe("JournalStore", () => {
 		expect(fs.readFileSync(journalFile, "utf8")).toBe(originalContent);
 	});
 
-	test("bounds: rejects when maxEventsPerChannel exceeded after compaction", async () => {
+	test("bounds: evicts oldest unacked events when maxEventsPerChannel exceeded", async () => {
 		const { store } = await makeStore({ maxEventsPerChannel: 2 });
 		await store.appendEvent("ch", event("evt-1"));
 		await store.appendEvent("ch", event("evt-2"));
-		// Both unacknowledged — compaction can't help.
+		// Both unacknowledged — compact evicts oldest to make room.
 		const result = await store.appendEvent("ch", event("evt-3"));
-		expect(result).toMatchObject({
-			error: true,
-			code: "storage_limit",
-		});
+		expect(result).toMatchObject({ appended: true });
+		// Only the newest 2 events should remain
+		const list = store.list("ch");
+		expect(list).toHaveLength(2);
+		expect(list[0].eventId).toBe("evt-2");
+		expect(list[1].eventId).toBe("evt-3");
 	});
 
 	test("bounds: allows append after compaction frees space", async () => {

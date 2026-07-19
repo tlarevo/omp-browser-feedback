@@ -221,7 +221,7 @@ export class JournalStore {
 			const afterCount = this.#getLines(channelId).filter(
 				(l) => l.type === "event",
 			).length;
-			if (afterCount >= this.#bounds.maxEventsPerChannel) {
+			if (afterCount > this.#bounds.maxEventsPerChannel) {
 				return {
 					error: true,
 					code: "storage_limit",
@@ -295,11 +295,9 @@ export class JournalStore {
 		let compacted = lines.filter(
 			(l) => l.type === "event" && !ackedEventIds.has(l.eventId),
 		);
-		// Trim oldest unacked events if over the limit
-		if (compacted.length > this.#bounds.maxEventsPerChannel) {
-			compacted = compacted.slice(
-				compacted.length - this.#bounds.maxEventsPerChannel,
-			);
+		// Trim oldest unacked events to enforce limit
+		if (compacted.length >= this.#bounds.maxEventsPerChannel) {
+			compacted = compacted.slice(-this.#bounds.maxEventsPerChannel + 1);
 		}
 		this.#channelLines.set(channelId, compacted);
 		const content =
