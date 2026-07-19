@@ -5,6 +5,7 @@ import {
 	ensureBrokerRunning,
 	getActiveFeedbackConnectionStatus,
 	getInProcessBrokerStatus,
+	getStatusChangeCallback,
 	setActiveFeedbackSubscription,
 	stopActiveBroker,
 } from "./broker-lifecycle";
@@ -28,6 +29,11 @@ export interface HandleBfCommandDependencies {
 	setActiveFeedbackSubscription?: typeof setActiveFeedbackSubscription;
 	getInProcessBrokerStatus?: typeof getInProcessBrokerStatus;
 	getActiveConnectionStatus?: typeof getActiveFeedbackConnectionStatus;
+	client?: BrowserBrokerClient;
+	submitFeedback?: (
+		text: string,
+		images?: Array<{ type: "image"; data: string; mimeType: string }>,
+	) => void;
 }
 
 function parseBrokerStartArgs(argsAfterStart: string): {
@@ -87,8 +93,10 @@ export async function handleBfCommand(
 				processId: process.pid,
 			});
 		};
-
 		await registerWith(client);
+		// Close old subscription after successful registration to prevent
+		// stale "closed" from overwriting the new subscription's "connecting".
+		clearActiveFeedbackSubscription();
 		const sub = client.subscribeFeedback(sessionId, onFeedback, {
 			reconnect: async () => {
 				const rediscovered = await loadClient();
@@ -98,6 +106,7 @@ export async function handleBfCommand(
 				await registerWith(rediscovered);
 				return rediscovered.getConnectionInfo();
 			},
+			onStateChange: getStatusChangeCallback(),
 		});
 		setSubscription(sub);
 	}
@@ -109,9 +118,7 @@ export async function handleBfCommand(
 			try {
 				const result = await ensureBroker({ port, portRange });
 				notify(
-					result.reused
-						? `Browser broker already running at ${result.baseUrl} (port ${result.port}).`
-						: `Browser broker started at ${result.baseUrl} (port ${result.port}).`,
+					`Browser broker ${result.reused ? "already running" : "started"} at ${result.baseUrl} (port ${result.port}). Run \`/bf connect\` to register your session.`,
 				);
 			} catch (err) {
 				notify(
@@ -189,8 +196,13 @@ export async function handleBfCommand(
 			? [
 					`Connection: ${renderConnectionState(connection.state)} (${connection.baseUrl})`,
 					`Reconnect attempts: ${connection.reconnectAttempts}`,
+					`Malformed messages: ${connection.malformedMessages}`,
 				]
-			: ["Connection: offline", "Reconnect attempts: 0"];
+			: [
+					"Connection: offline",
+					"Reconnect attempts: 0",
+					"Malformed messages: 0",
+				];
 		if (!client) {
 			notify(
 				[
@@ -220,7 +232,10 @@ export async function handleBfCommand(
 			);
 		} catch (err) {
 			notify(
-				`Broker reachable but status check failed: ${err instanceof Error ? err.message : String(err)}`,
+				[
+					`Broker reachable but status check failed: ${err instanceof Error ? err.message : String(err)}`,
+					...connectionLines,
+				].join("\n"),
 			);
 		}
 		return;
@@ -347,7 +362,29 @@ export async function handleBfCommand(
 			notify("No browser feedback received for this session.");
 			return;
 		}
-		notify(renderBrowserFeedbackContext(latest.payload));
+		const text = renderBrowserFeedbackContext(latest.payload);
+		if (
+			deps.submitFeedback &&
+			"screenshot" in latest.payload &&
+			latest.payload.screenshot
+		) {
+			const image = await deps.client
+				?.fetchScreenshot(latest.payload.eventId)
+				.catch(() => undefined);
+			if (image) {
+				deps.submitFeedback(text, [
+					{
+						type: "image",
+						data: btoa(
+							Array.from(image.bytes, (b) => String.fromCharCode(b)).join(""),
+						),
+						mimeType: image.mimeType,
+					},
+				]);
+				return;
+			}
+		}
+		notify(text);
 		return;
 	}
 
@@ -383,7 +420,29 @@ export async function handleBfCommand(
 			);
 			return;
 		}
-		notify(renderBrowserFeedbackContext(selected.payload));
+		const text = renderBrowserFeedbackContext(selected.payload);
+		if (
+			deps.submitFeedback &&
+			"screenshot" in selected.payload &&
+			selected.payload.screenshot
+		) {
+			const image = await deps.client
+				?.fetchScreenshot(selected.payload.eventId)
+				.catch(() => undefined);
+			if (image) {
+				deps.submitFeedback(text, [
+					{
+						type: "image",
+						data: btoa(
+							Array.from(image.bytes, (b) => String.fromCharCode(b)).join(""),
+						),
+						mimeType: image.mimeType,
+					},
+				]);
+				return;
+			}
+		}
+		notify(text);
 		return;
 	}
 

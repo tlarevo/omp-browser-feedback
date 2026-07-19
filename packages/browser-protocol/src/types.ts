@@ -1,6 +1,13 @@
-import type { BROWSER_PROTOCOL_VERSION } from "./version";
+import type { BROWSER_PROTOCOL_VERSIONS } from "./version";
 
-export type BrowserProtocolVersion = typeof BROWSER_PROTOCOL_VERSION;
+/** Every protocol version this build can speak. */
+export type BrowserProtocolVersion = (typeof BROWSER_PROTOCOL_VERSIONS)[number];
+
+/** Declared version range for a peer. */
+export interface BrowserProtocolVersionRange {
+	min: BrowserProtocolVersion;
+	max: BrowserProtocolVersion;
+}
 
 export type BrowserSessionStatus = "active" | "idle" | "disconnected";
 
@@ -44,6 +51,21 @@ export interface BrowserAccessibilityContext {
 	description?: string;
 }
 
+export interface SelectorSegment {
+	selector: string;
+	shadowRoot: boolean;
+}
+
+export interface BrowserComponentAncestor {
+	name: string;
+	source?: string;
+}
+
+export interface BrowserComponentContext {
+	framework: string;
+	ancestors: BrowserComponentAncestor[];
+}
+
 export interface BrowserElementContext {
 	selector: string;
 	xpath?: string;
@@ -54,14 +76,26 @@ export interface BrowserElementContext {
 	bounds: BrowserElementBounds;
 	computedStyles: Record<string, string>;
 	accessibility?: BrowserAccessibilityContext;
+	selectorSegments?: SelectorSegment[];
+	shadowRoot?: boolean;
+	component?: BrowserComponentContext;
 }
 
 export interface BrowserScreenshotRef {
-	kind: "full-visible-tab" | "crop";
+	kind: "full-visible-tab" | "crop" | "full-page";
 	ref: string;
 	mimeType: "image/png" | "image/jpeg";
 	width: number;
 	height: number;
+	downscaled?: boolean;
+}
+export type ConsoleEntryLevel = "error" | "warn";
+
+export interface ConsoleEntry {
+	timestamp: string;
+	level: ConsoleEntryLevel;
+	message: string;
+	stack?: string;
 }
 
 export interface DomSelectionFeedback {
@@ -74,8 +108,8 @@ export interface DomSelectionFeedback {
 	element: BrowserElementContext;
 	note?: string;
 	screenshot?: BrowserScreenshotRef;
+	console?: ConsoleEntry[];
 }
-
 export interface PageScreenshotFeedback {
 	protocolVersion: BrowserProtocolVersion;
 	eventId: string;
@@ -85,11 +119,29 @@ export interface PageScreenshotFeedback {
 	page: BrowserPageContext;
 	note?: string;
 	screenshot: BrowserScreenshotRef;
+	console?: ConsoleEntry[];
+}
+
+export interface BatchFeedback {
+	protocolVersion: BrowserProtocolVersion;
+	eventId: string;
+	type: "batch.feedback";
+	channelId: string;
+	createdAt: string;
+	items: DomSelectionFeedback[];
+	batchNote?: string;
 }
 
 export type BrowserFeedbackEvent =
 	| DomSelectionFeedback
-	| PageScreenshotFeedback;
+	| PageScreenshotFeedback
+	| BatchFeedback;
+
+/** v2-only: OMP→broker acknowledgement after feedback injection. */
+export interface BrowserFeedbackAck {
+	type: "browser.feedback.ack";
+	eventId: string;
+}
 
 export interface BrowserAck {
 	ok: true;

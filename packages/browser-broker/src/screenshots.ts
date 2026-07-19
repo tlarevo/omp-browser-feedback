@@ -49,4 +49,17 @@ export class BrowserScreenshotStore {
 		await Bun.write(filePath, input.bytes);
 		return { ref: `screenshots/${filename}`, path: filePath };
 	}
+
+	async read(
+		ref: string,
+	): Promise<{ bytes: Uint8Array; mimeType: string } | undefined> {
+		const filename = ref.replace(/^screenshots\//, "");
+		const filePath = path.join(this.#rootDir, filename);
+		if (!filePath.startsWith(this.#rootDir)) return undefined;
+		const file = Bun.file(filePath);
+		if (!(await file.exists())) return undefined;
+		const bytes = new Uint8Array(await file.arrayBuffer());
+		const mimeType = filename.endsWith(".jpg") ? "image/jpeg" : "image/png";
+		return { bytes, mimeType };
+	}
 }

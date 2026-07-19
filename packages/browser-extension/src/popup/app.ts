@@ -1,6 +1,12 @@
-import type { BrowserSessionRegistration } from "@oh-my-pi/browser-protocol";
+import {
+	type BrowserSessionRegistration,
+	DEFAULT_BROWSER_BROKER_PORT_RANGE,
+	parsePortRange,
+	portsInRange,
+} from "@oh-my-pi/browser-protocol";
 import { listSessions, redeemPairingCode } from "../background";
 import {
+	type BasketState,
 	ensureBrowserInstallId,
 	type PopupActionHandlers,
 	type PopupState,
@@ -11,6 +17,7 @@ interface StoredState {
 	browserCapabilityToken?: string;
 	browserInstallId?: string;
 	selectedSessionId?: string;
+	basketCount?: number;
 }
 
 interface DiscoverBrokerResponse {
@@ -26,10 +33,22 @@ function readOptionalString(value: unknown, key: string): string | undefined {
 	return typeof candidate === "string" ? candidate : undefined;
 }
 
+function readOptionalNumber(value: unknown, key: string): number | undefined {
+	if (!value || typeof value !== "object") return undefined;
+	const record = value as Record<string, unknown>;
+	const candidate = record[key];
+	return typeof candidate === "number" ? candidate : undefined;
+}
+
 async function readStorage(): Promise<StoredState> {
 	return new Promise((resolve) => {
 		chrome.storage.local.get(
-			["browserCapabilityToken", "browserInstallId", "selectedSessionId"],
+			[
+				"browserCapabilityToken",
+				"browserInstallId",
+				"selectedSessionId",
+				"basketCount",
+			],
 			(items) => {
 				resolve({
 					browserCapabilityToken: readOptionalString(
@@ -38,6 +57,7 @@ async function readStorage(): Promise<StoredState> {
 					),
 					browserInstallId: readOptionalString(items, "browserInstallId"),
 					selectedSessionId: readOptionalString(items, "selectedSessionId"),
+					basketCount: readOptionalNumber(items, "basketCount"),
 				});
 			},
 		);
@@ -70,7 +90,21 @@ async function sendToBackground<T>(
 	});
 }
 
-const DEFAULT_PORTS: number[] = Array.from({ length: 21 }, (_, i) => 4317 + i);
+async function setBadgeText(text: string): Promise<void> {
+	return new Promise((resolve) => {
+		chrome.action.setBadgeText({ text }, resolve);
+	});
+}
+
+async function setBadgeBackgroundColor(color: string): Promise<void> {
+	return new Promise((resolve) => {
+		chrome.action.setBadgeBackgroundColor({ color }, resolve);
+	});
+}
+
+const DEFAULT_PORTS: number[] = portsInRange(
+	parsePortRange(DEFAULT_BROWSER_BROKER_PORT_RANGE),
+);
 
 function isUnauthorizedError(errorMessage: string | undefined): boolean {
 	return Boolean(
@@ -80,19 +114,81 @@ function isUnauthorizedError(errorMessage: string | undefined): boolean {
 	);
 }
 
+interface RawBasketItem {
+	itemId: string;
+	event: {
+		element: {
+			tagName: string;
+			selector: string;
+			text?: string;
+		};
+	};
+	note: string;
+}
+
+interface RawBasketFromBackground {
+	items: RawBasketItem[];
+	batchNote: string;
+	error?: string;
+}
+
+function toBasketState(raw: RawBasketFromBackground): BasketState {
+	return {
+		items: raw.items.map((item) => ({
+			itemId: item.itemId,
+			tagName: item.event.element.tagName,
+			selector: item.event.element.selector,
+			note: item.note,
+			text: item.event.element.text,
+		})),
+		batchNote: raw.batchNote,
+		error: raw.error,
+	};
+}
+
 async function initPopup(): Promise<void> {
 	const root = document.getElementById("app");
 	if (!(root instanceof HTMLElement)) return;
 	const appRoot = root;
 
+	let consumedHint: string | undefined;
 	function render(state: PopupState): void {
 		renderPopup(appRoot, state, handlers);
+		if (consumedHint) {
+			const banner = appRoot.ownerDocument.createElement("p");
+			banner.textContent = consumedHint;
+			banner.style.cssText =
+				"margin:0 0 8px;padding:6px 8px;background:#fff3cd;border:1px solid #ffc107;border-radius:4px;font-size:13px;";
+			appRoot.prepend(banner);
+		}
 	}
 
 	let currentBaseUrl = "";
 	let currentCapabilityToken = "";
 	let currentSessions: BrowserSessionRegistration[] = [];
+	let currentBasket: BasketState | undefined;
 	let currentSelectedId: string | undefined;
+	let currentConsoleCapture = false;
+	let currentBasketCount = 0;
+
+	async function syncBadge(): Promise<void> {
+		const text = currentBasketCount > 0 ? String(currentBasketCount) : "";
+		await setBadgeText(text);
+		if (currentBasketCount > 0) {
+			await setBadgeBackgroundColor("#ff9800");
+		}
+	}
+
+	function renderReady(): void {
+		render({
+			kind: "ready",
+			baseUrl: currentBaseUrl,
+			selectedSessionId: currentSelectedId,
+			sessions: currentSessions,
+			basket: currentBasket,
+			consoleCaptureEnabled: currentConsoleCapture,
+		});
+	}
 
 	const handlers: PopupActionHandlers = {
 		async onPairWithCode(code) {
@@ -137,15 +233,10 @@ async function initPopup(): Promise<void> {
 		async onSelectSession(sessionId) {
 			currentSelectedId = sessionId;
 			await writeStorage({ selectedSessionId: sessionId });
-			render({
-				kind: "ready",
-				baseUrl: currentBaseUrl,
-				selectedSessionId: currentSelectedId,
-				sessions: currentSessions,
-			});
+			renderReady();
 		},
 
-		async onStartPicker(sessionId, note) {
+		async onStartPicker(sessionId: string, note?: string) {
 			const session = currentSessions.find(
 				(item) => item.sessionId === sessionId,
 			);
@@ -158,7 +249,93 @@ async function initPopup(): Promise<void> {
 			});
 			window.close();
 		},
+
+		async onStartMultiPick(sessionId: string) {
+			const session = currentSessions.find(
+				(item) => item.sessionId === sessionId,
+			);
+			if (!session) return;
+			await sendToBackground({
+				type: "omp:start-picker",
+				channelId: session.channelId,
+				baseUrl: currentBaseUrl,
+				multiPick: true,
+			});
+			window.close();
+		},
+
+		async onSubmitBatch() {
+			await sendToBackground({ type: "omp:submit-batch" });
+			window.close();
+		},
+
+		async onRemoveBasketItem(itemId) {
+			await sendToBackground({ type: "omp:remove-from-basket", itemId });
+			const basketResult = await sendToBackground<{
+				ok: boolean;
+				data: RawBasketFromBackground;
+			}>({
+				type: "omp:get-basket",
+			});
+			if (basketResult.ok) {
+				currentBasket = toBasketState(basketResult.data);
+			}
+			renderReady();
+		},
+
+		async onToggleConsoleCapture(enabled) {
+			currentConsoleCapture = enabled;
+			const tabs = await chrome.tabs.query({
+				active: true,
+				currentWindow: true,
+			});
+			const tab = tabs[0];
+			if (tab?.url) {
+				try {
+					const origin = new URL(tab.url).origin;
+					await sendToBackground({
+						type: "omp:set-console-consent",
+						origin,
+						enabled,
+					});
+				} catch {
+					// invalid URL, ignore
+				}
+			}
+		},
+
+		async onRefresh() {
+			await refreshFromBroker();
+		},
+
+		async onForget() {
+			await removeStorage(["browserCapabilityToken", "selectedSessionId"]);
+			currentCapabilityToken = "";
+			currentSelectedId = undefined;
+			currentSessions = [];
+			render({ kind: "unpaired", baseUrl: currentBaseUrl });
+		},
 	};
+
+	const hintKey = "pickerHint";
+	const hintRaw = await chrome.storage.local.get([hintKey]);
+	const hintMessage =
+		typeof hintRaw[hintKey] === "string" ? hintRaw[hintKey] : undefined;
+	if (hintMessage) {
+		await chrome.storage.local.remove([hintKey]);
+		consumedHint = hintMessage;
+	}
+
+	chrome.storage.onChanged.addListener((changes, area) => {
+		if (area !== "local") return;
+		if (changes.basketCount) {
+			currentBasketCount = (changes.basketCount.newValue as number) ?? 0;
+			syncBadge();
+		}
+	});
+
+	render({ kind: "loading" });
+	await refreshFromBroker();
 
 	async function refreshFromBroker(): Promise<void> {
 		const brokerResult = await sendToBackground<DiscoverBrokerResponse>({
@@ -175,6 +352,8 @@ async function initPopup(): Promise<void> {
 		const stored = await readStorage();
 		currentCapabilityToken = stored.browserCapabilityToken ?? "";
 		currentSelectedId = stored.selectedSessionId;
+		currentBasketCount = stored.basketCount ?? 0;
+		await syncBadge();
 
 		if (!currentCapabilityToken) {
 			render({ kind: "unpaired", baseUrl: currentBaseUrl });
@@ -211,16 +390,19 @@ async function initPopup(): Promise<void> {
 			return;
 		}
 
-		render({
-			kind: "ready",
-			baseUrl: currentBaseUrl,
-			selectedSessionId: currentSelectedId,
-			sessions: currentSessions,
+		const basketResult = await sendToBackground<{
+			ok: boolean;
+			data: RawBasketFromBackground;
+		}>({
+			type: "omp:get-basket",
 		});
-	}
 
-	render({ kind: "no-broker", attemptedPorts: DEFAULT_PORTS });
-	await refreshFromBroker();
+		if (basketResult.ok) {
+			currentBasket = toBasketState(basketResult.data);
+		}
+
+		renderReady();
+	}
 }
 
 if (typeof document !== "undefined") {

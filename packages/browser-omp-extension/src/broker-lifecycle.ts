@@ -1,4 +1,3 @@
-import * as fs from "node:fs/promises";
 import * as path from "node:path";
 import {
 	type BrokerPortOptions,
@@ -7,15 +6,21 @@ import {
 	DEFAULT_BROWSER_BROKER_HOST,
 	discoverCompatibleBroker,
 	generateBrowserBrokerToken,
+	isProcessAlive,
 	readDiscoveryFile,
+	removeOwnedDiscoveryFile,
 	resolveBrokerPorts,
 	writeDiscoveryFile,
 } from "@oh-my-pi/browser-broker";
-import { BROWSER_PROTOCOL_VERSION } from "@oh-my-pi/browser-protocol";
+import {
+	BROWSER_FEEDBACK_LIMITS,
+	BROWSER_PROTOCOL_VERSION,
+} from "@oh-my-pi/browser-protocol";
 import type {
 	BrowserFeedbackConnectionStatus,
 	BrowserFeedbackSubscription,
 } from "./client";
+import { readConfig } from "./config";
 
 export type { BrokerPortOptions };
 
@@ -23,6 +28,9 @@ let _activeBroker: BrowserBrokerServer | undefined;
 let _activeDiscoveryPath: string | undefined;
 let _activeAuthToken: string | undefined;
 let _activeSubscription: BrowserFeedbackSubscription | undefined;
+let _onStatusChange:
+	| ((status: BrowserFeedbackConnectionStatus) => void)
+	| undefined;
 
 function defaultDiscoveryPath(): string {
 	return path.join(Bun.env.HOME ?? "~", ".omp", "browser-broker.json");
@@ -54,11 +62,29 @@ export interface BrokerStartResult {
 	reused: boolean;
 }
 
+export interface EnsureBrokerRunningDeps {
+	discover?: typeof discoverCompatibleBroker;
+	createServer?: typeof createBrowserBrokerServer;
+	readDiscovery?: typeof readDiscoveryFile;
+	writeDiscovery?: typeof writeDiscoveryFile;
+	generateToken?: typeof generateBrowserBrokerToken;
+	loadConfig?: () => Promise<{ portRange?: string }>;
+	env?: Record<string, string | undefined>;
+	pid?: number;
+}
+
 export async function ensureBrokerRunning(
 	options: BrokerStartOptions = {},
+	deps: EnsureBrokerRunningDeps = {},
 ): Promise<BrokerStartResult> {
+	const discover = deps.discover ?? discoverCompatibleBroker;
+	const createServer = deps.createServer ?? createBrowserBrokerServer;
+	const readDiscovery = deps.readDiscovery ?? readDiscoveryFile;
+	const writeDiscovery = deps.writeDiscovery ?? writeDiscoveryFile;
+	const generateToken = deps.generateToken ?? generateBrowserBrokerToken;
+	const loadConfig = deps.loadConfig ?? readConfig;
+	const pid = deps.pid ?? process.pid;
 	const discoveryPath = options.discoveryPath ?? defaultDiscoveryPath();
-	const ports = resolveBrokerPorts(options);
 
 	if (_activeBroker && _activeAuthToken) {
 		return {
@@ -69,13 +95,21 @@ export async function ensureBrokerRunning(
 		};
 	}
 
-	const discovery = await readDiscoveryFile(discoveryPath);
-	if (discovery) {
-		const existing = await discoverCompatibleBroker({
-			host: discovery.host,
-			ports: [discovery.port],
-		});
-		if (existing) {
+	const config = await loadConfig();
+	const ports = resolveBrokerPorts({
+		port: options.port,
+		portRange: options.portRange,
+		configPortRange: config.portRange,
+		env: deps.env,
+	});
+
+	// Reuse a compatible broker anywhere in the configured range, not only the
+	// port named by the discovery file. Only trust the recorded auth token when
+	// the writer process is still alive; stale/dead-PID metadata is ignored.
+	const discovery = await readDiscovery(discoveryPath);
+	if (discovery && isProcessAlive(discovery.pid)) {
+		const existing = await discover({ host: discovery.host, ports });
+		if (existing && existing.brokerId === discovery.broker_id) {
 			return {
 				baseUrl: existing.baseUrl,
 				authToken: discovery.auth_token,
@@ -85,35 +119,42 @@ export async function ensureBrokerRunning(
 		}
 	}
 
-	const authToken = generateBrowserBrokerToken();
+	const authToken = generateToken();
 	let server: BrowserBrokerServer | undefined;
 
 	for (const port of ports) {
 		try {
-			server = await createBrowserBrokerServer({
+			server = await createServer({
 				host: DEFAULT_BROWSER_BROKER_HOST,
 				port,
 				authToken,
+				maxScreenshotBytes: BROWSER_FEEDBACK_LIMITS.maxScreenshotBytes,
 			});
 			break;
 		} catch {
-			// port occupied, try next
+			console.debug("[browser-feedback] Port", port, "occupied, trying next");
 		}
 	}
 
+	// Never fall back to an OS-assigned port: exhaustion is a hard error so the
+	// broker stays within the configured, discoverable range.
 	if (!server) {
-		server = await createBrowserBrokerServer({
-			host: DEFAULT_BROWSER_BROKER_HOST,
-			port: 0,
-			authToken,
-		});
+		const attempted =
+			ports.length === 1
+				? `port ${ports[0]}`
+				: `ports ${ports[0]}-${ports[ports.length - 1]}`;
+		throw new Error(
+			`Browser broker could not bind to any of ${attempted}. ` +
+				"All candidate ports are occupied. Free a port or choose another with " +
+				"`/bf broker start --port <port>`.",
+		);
 	}
 
 	_activeBroker = server;
 	_activeDiscoveryPath = discoveryPath;
 	_activeAuthToken = authToken;
 
-	await writeDiscoveryFile(discoveryPath, {
+	await writeDiscovery(discoveryPath, {
 		protocol_version: BROWSER_PROTOCOL_VERSION,
 		broker_id: "local",
 		host: DEFAULT_BROWSER_BROKER_HOST,
@@ -121,7 +162,7 @@ export async function ensureBrokerRunning(
 		base_url: server.baseUrl,
 		ws_url: `ws://${DEFAULT_BROWSER_BROKER_HOST}:${server.port}`,
 		auth_token: authToken,
-		pid: process.pid,
+		pid,
 		started_at: new Date().toISOString(),
 	});
 
@@ -144,6 +185,22 @@ export function clearActiveFeedbackSubscription(): void {
 	_activeSubscription?.close();
 	_activeSubscription = undefined;
 }
+export function setStatusChangeCallback(
+	cb: (status: BrowserFeedbackConnectionStatus) => void,
+): void {
+	_onStatusChange = cb;
+}
+
+export function clearStatusChangeCallback(): void {
+	_onStatusChange = undefined;
+}
+
+export function getStatusChangeCallback():
+	| ((status: BrowserFeedbackConnectionStatus) => void)
+	| undefined {
+	return _onStatusChange;
+}
+
 export function getActiveFeedbackConnectionStatus():
 	| BrowserFeedbackConnectionStatus
 	| undefined {
@@ -158,7 +215,7 @@ export async function stopActiveBroker(): Promise<boolean> {
 	_activeAuthToken = undefined;
 	if (_activeDiscoveryPath) {
 		try {
-			await fs.unlink(_activeDiscoveryPath);
+			await removeOwnedDiscoveryFile(_activeDiscoveryPath, process.pid);
 		} catch {}
 		_activeDiscoveryPath = undefined;
 	}

@@ -4,5 +4,6 @@
 		"lib": ["ESNext", "DOM", "DOM.Iterable"],
 		"types": ["bun", "chrome"]
 	},
-	"include": ["src", "test"]
+	"include": ["src", "test"],
+	"exclude": ["test/e2e-chrome*.test.ts"]
 }

@@ -3,6 +3,7 @@ import * as path from "node:path";
 
 export interface BrowserFeedbackConfig {
 	autoRun: boolean;
+	portRange?: string;
 }
 
 const DEFAULT_CONFIG: BrowserFeedbackConfig = { autoRun: false };

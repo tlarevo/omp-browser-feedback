@@ -1,6 +1,7 @@
 export * from "./auth";
 export * from "./discovery";
 export * from "./feedback-store";
+export * from "./journal";
 export * from "./ports";
 export * from "./screenshots";
 export * from "./server";

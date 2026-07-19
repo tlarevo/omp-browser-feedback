@@ -148,6 +148,7 @@ describe("BrowserBrokerClient.subscribeFeedback", () => {
 			},
 			setTimeout: timers.setTimeout,
 			clearTimeout: timers.clearTimeout,
+			random: () => 1,
 		});
 
 		expect(socketHarness.sockets[0]?.url).toContain("127.0.0.1:4317");
@@ -206,6 +207,7 @@ describe("BrowserBrokerClient.subscribeFeedback", () => {
 				}),
 				setTimeout: timers.setTimeout,
 				clearTimeout: timers.clearTimeout,
+				random: () => 1,
 			},
 		);
 
@@ -246,6 +248,7 @@ describe("BrowserBrokerClient.subscribeFeedback", () => {
 				};
 			},
 			setTimeout: timers.setTimeout,
+			random: () => 1,
 			clearTimeout: timers.clearTimeout,
 		});
 
@@ -280,6 +283,7 @@ describe("BrowserBrokerClient.subscribeFeedback", () => {
 					baseUrl: "http://127.0.0.1:4411",
 					authToken: "token-2",
 				}),
+				random: () => 1,
 				setTimeout: timers.setTimeout,
 				clearTimeout: timers.clearTimeout,
 			},
@@ -333,5 +337,93 @@ describe("BrowserBrokerClient.subscribeFeedback", () => {
 		expect(received.filter((eventId) => eventId === "evt-1000")).toHaveLength(
 			1,
 		);
+	});
+});
+describe("reconnect jitter", () => {
+	test("bounded one-sided jitter: delay stays within [0.75×base, base]", async () => {
+		const timers = createTimerHarness();
+		const socketHarness = createSocketHarness();
+		const client = new BrowserBrokerClient({
+			baseUrl: "http://127.0.0.1:4317",
+			authToken: "root-token",
+		});
+		let randomCallCount = 0;
+		// random() returns values that span the full range
+		const randomValues = [0, 0.5, 1, 0, 0.5, 1, 0, 0.5, 1];
+
+		client.subscribeFeedback("ses_1", () => {}, {
+			createWebSocket: socketHarness.createWebSocket,
+			reconnect: async () => ({
+				baseUrl: "http://127.0.0.1:4411",
+				authToken: "token-2",
+			}),
+			setTimeout: timers.setTimeout,
+			clearTimeout: timers.clearTimeout,
+			random: () => {
+				const v = randomValues[randomCallCount % randomValues.length] ?? 0;
+				randomCallCount += 1;
+				return v;
+			},
+		});
+
+		// First attempt: base=500, jitter=[375, 500]
+		socketHarness.sockets[0]?.emitClose();
+		const d1 = timers.delays[0] ?? 0;
+		expect(d1).toBeGreaterThanOrEqual(375);
+		expect(d1).toBeLessThanOrEqual(500);
+		await timers.fireNext();
+
+		// Second attempt: base=1000, jitter=[750, 1000]
+		socketHarness.sockets[1]?.emitClose();
+		const d2 = timers.delays[1] ?? 0;
+		expect(d2).toBeGreaterThanOrEqual(750);
+		expect(d2).toBeLessThanOrEqual(1000);
+		await timers.fireNext();
+
+		// Third attempt: base=2000, jitter=[1500, 2000]
+		socketHarness.sockets[2]?.emitClose();
+		const d3 = timers.delays[2] ?? 0;
+		expect(d3).toBeGreaterThanOrEqual(1500);
+		expect(d3).toBeLessThanOrEqual(2000);
+		await timers.fireNext();
+
+		// All delays must be <= 30_000 (the cap)
+		for (const d of timers.delays) {
+			expect(d).toBeLessThanOrEqual(30_000);
+		}
+	});
+});
+
+describe("BrowserBrokerClient.fetchScreenshot", () => {
+	test("returns bytes and mimeType on success", async () => {
+		const pngBytes = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+		const client = new BrowserBrokerClient({
+			baseUrl: "http://127.0.0.1:4317",
+			authToken: "root-token",
+			fetch: async (url, init) => {
+				expect(url).toContain("/api/feedback/evt_1/screenshot");
+				expect(init?.headers).toMatchObject({
+					Authorization: "Bearer root-token",
+				});
+				return new Response(pngBytes, {
+					status: 200,
+					headers: { "Content-Type": "image/png" },
+				});
+			},
+		});
+		const result = await client.fetchScreenshot("evt_1");
+		expect(result).not.toBeNull();
+		expect(result?.mimeType).toBe("image/png");
+		expect([...(result?.bytes ?? [])]).toEqual([...pngBytes]);
+	});
+
+	test("returns null when screenshot not found", async () => {
+		const client = new BrowserBrokerClient({
+			baseUrl: "http://127.0.0.1:4317",
+			authToken: "root-token",
+			fetch: async () => new Response(null, { status: 404 }),
+		});
+		const result = await client.fetchScreenshot("evt_missing");
+		expect(result).toBeNull();
 	});
 });

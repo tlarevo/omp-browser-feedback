@@ -1,3 +1,10 @@
+/**
+ * Backward-compatible re-exports.
+ *
+ * The original single-version schemas are now the v2 schemas, which is the
+ * current highest version.  Prefer importing from `./v1` or `./v2` directly
+ * in new code.
+ */
 import { type } from "arktype";
 import { BROWSER_PROTOCOL_VERSION } from "./version";
 
@@ -69,12 +76,22 @@ const elementSchema = type({
 
 const screenshotSchema = type({
 	"+": "reject",
-	kind: "'full-visible-tab' | 'crop'",
+	kind: "'full-visible-tab' | 'crop' | 'full-page'",
 	ref: nonEmptyString,
 	mimeType: "'image/png' | 'image/jpeg'",
 	width: "number",
 	height: "number",
+	"downscaled?": "boolean",
 });
+const consoleEntrySchema = type({
+	"+": "reject",
+	timestamp: nonEmptyString,
+	level: "'error' | 'warn'",
+	message: "string",
+	"stack?": "string",
+});
+
+const consoleSectionSchema = consoleEntrySchema.array();
 
 export const domSelectionFeedbackSchema = type({
 	"+": "reject",
@@ -87,6 +104,7 @@ export const domSelectionFeedbackSchema = type({
 	element: elementSchema,
 	"note?": "string",
 	"screenshot?": screenshotSchema,
+	"console?": consoleSectionSchema,
 });
 
 export const pageScreenshotFeedbackSchema = type({
@@ -99,8 +117,20 @@ export const pageScreenshotFeedbackSchema = type({
 	page: pageSchema,
 	"note?": "string",
 	screenshot: screenshotSchema,
+	"console?": consoleSectionSchema,
 });
 
-export const browserFeedbackEventSchema = domSelectionFeedbackSchema.or(
-	pageScreenshotFeedbackSchema,
-);
+export const batchFeedbackSchema = type({
+	"+": "reject",
+	protocolVersion: type.enumerated(BROWSER_PROTOCOL_VERSION),
+	eventId: nonEmptyString,
+	type: "'batch.feedback'",
+	channelId: nonEmptyString,
+	createdAt: nonEmptyString,
+	items: domSelectionFeedbackSchema.array(),
+	"batchNote?": "string",
+});
+
+export const browserFeedbackEventSchema = domSelectionFeedbackSchema
+	.or(pageScreenshotFeedbackSchema)
+	.or(batchFeedbackSchema);

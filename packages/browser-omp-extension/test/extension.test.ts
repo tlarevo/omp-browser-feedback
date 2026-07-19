@@ -1,11 +1,18 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, mock, test } from "bun:test";
+import { execSync } from "node:child_process";
 import type {
 	ExtensionAPI,
 	ExtensionCommandContext,
 } from "@oh-my-pi/pi-coding-agent";
 import { BrowserBrokerClient } from "../src/client";
 import { handleBfCommand } from "../src/commands";
-import browserFeedbackExtension from "../src/extension";
+import browserFeedbackExtension, { downscaleImage } from "../src/extension";
+
+let hasPil = false;
+try {
+	execSync("python3 -c 'from PIL import Image'", { stdio: "ignore" });
+	hasPil = true;
+} catch {}
 
 interface NotifyHarness {
 	notify: (message: string) => void;
@@ -414,6 +421,7 @@ describe("browserFeedbackExtension", () => {
 
 		expect(label).toBe("Browser Feedback");
 		expect([...handlers.keys()].sort()).toEqual([
+			"input",
 			"session_shutdown",
 			"session_start",
 		]);
@@ -422,5 +430,362 @@ describe("browserFeedbackExtension", () => {
 		expect(
 			commandConfig?.getArgumentCompletions("s").map((option) => option.value),
 		).toEqual(["status", "settings"]);
+	});
+
+	test("queues feedback when autoRun is off and ctx is not yet captured, delivers on next ctx", async () => {
+		let capturedOnFeedback: ((event: unknown) => void) | undefined;
+		const editorTexts: string[] = [];
+
+		mock.module("../src/broker-lifecycle", () => ({
+			ensureBrokerRunning: async () => ({
+				baseUrl: "http://127.0.0.1:4317",
+				authToken: "tok",
+				port: 4317,
+				reused: false,
+			}),
+			setActiveFeedbackSubscription: () => {},
+			stopActiveBroker: async () => true,
+			getInProcessBrokerStatus: () => ({
+				running: false,
+				baseUrl: "",
+				port: 0,
+			}),
+			getActiveFeedbackConnectionStatus: () => undefined,
+			clearActiveFeedbackSubscription: () => {},
+		}));
+
+		mock.module("../src/config", () => ({
+			readConfig: async () => ({ autoRun: false }),
+			writeConfig: async () => {},
+		}));
+		mock.module("../src/renderer", () => ({
+			formatFeedbackAsPrompt: (event: unknown) =>
+				`mocked:${JSON.stringify(event)}`,
+			renderBrowserFeedbackContext: (event: unknown) =>
+				`mocked-ctx:${JSON.stringify(event)}`,
+		}));
+		mock.module("../src/logger", () => ({
+			logInfo: () => {},
+			logWarn: () => {},
+			logError: () => {},
+		}));
+
+		mock.module("../src/client", () => ({
+			BrowserBrokerClient: class {
+				subscribeFeedback(
+					_sessionId: string,
+					onFeedback: (event: unknown) => void,
+				) {
+					capturedOnFeedback = onFeedback;
+					return {
+						close() {},
+						getStatus: () => ({
+							state: "connected",
+							reconnectAttempts: 0,
+							baseUrl: "",
+							malformedMessages: 0,
+						}),
+					};
+				}
+				async registerSession() {}
+				getConnectionInfo() {
+					return { baseUrl: "", authToken: "" };
+				}
+			},
+			createBrowserBrokerClientFromDiscovery: async () => undefined,
+		}));
+
+		const handlers = new Map<string, unknown>();
+		let sentMessage: string | undefined;
+
+		const api = {
+			setLabel() {},
+			on(event: string, handler: unknown) {
+				handlers.set(event, handler);
+			},
+			registerCommand() {},
+			sendUserMessage(msg: string) {
+				sentMessage = msg;
+			},
+		} as unknown as ExtensionAPI;
+
+		browserFeedbackExtension(api);
+
+		const sessionStart = handlers.get("session_start") as (
+			...args: unknown[]
+		) => Promise<void>;
+
+		// 1. Start session with ctx that has no UI
+		const noUiCtx = {
+			cwd: "/tmp",
+			ui: {},
+			sessionManager: { getSessionId: () => "s1", getSessionName: () => "S1" },
+			hasUI: false,
+		};
+		await sessionStart({}, noUiCtx);
+		expect(capturedOnFeedback).toBeDefined();
+
+		// 2. Trigger feedback while ctx has no UI — should queue, not send
+		if (capturedOnFeedback)
+			await capturedOnFeedback({ type: "dom.selection", eventId: "e1" });
+		expect(sentMessage).toBeUndefined();
+
+		// 3. Start session again with ctx that has UI — should drain the queue
+		const uiCtx = {
+			cwd: "/tmp",
+			ui: {
+				setEditorText(text: string) {
+					editorTexts.push(text);
+				},
+				notify() {},
+				setStatus() {},
+			},
+			sessionManager: { getSessionId: () => "s1", getSessionName: () => "S1" },
+			hasUI: true,
+		};
+		await sessionStart({}, uiCtx);
+		expect(editorTexts.length).toBe(1);
+		expect(sentMessage).toBeUndefined(); // never auto-sent
+	});
+
+	test("session_start with unreachable broker notifies with actionable message", async () => {
+		mock.module("../src/broker-lifecycle", () => ({
+			ensureBrokerRunning: async () => {
+				throw new Error(
+					"All browser broker ports occupied (4317-4337). Stop the conflicting service or run /bf broker start --port <N>.",
+				);
+			},
+			setActiveFeedbackSubscription: () => {},
+			stopActiveBroker: async () => true,
+			getInProcessBrokerStatus: () => ({
+				running: false,
+				baseUrl: "",
+				port: 0,
+			}),
+			getActiveFeedbackConnectionStatus: () => undefined,
+			clearActiveFeedbackSubscription: () => {},
+		}));
+
+		mock.module("../src/config", () => ({
+			readConfig: async () => ({ autoRun: false }),
+			writeConfig: async () => {},
+		}));
+		mock.module("../src/renderer", () => ({
+			formatFeedbackAsPrompt: (event: unknown) =>
+				`mocked:${JSON.stringify(event)}`,
+			renderBrowserFeedbackContext: (event: unknown) =>
+				`mocked-ctx:${JSON.stringify(event)}`,
+		}));
+
+		mock.module("../src/logger", () => ({
+			logInfo: () => {},
+			logWarn: () => {},
+			logError: () => {},
+		}));
+
+		mock.module("../src/client", () => ({
+			BrowserBrokerClient: class {
+				subscribeFeedback() {
+					return {
+						close() {},
+						getStatus: () => ({
+							state: "connected",
+							reconnectAttempts: 0,
+							baseUrl: "",
+							malformedMessages: 0,
+						}),
+					};
+				}
+				async registerSession() {}
+				getConnectionInfo() {
+					return { baseUrl: "", authToken: "" };
+				}
+			},
+			createBrowserBrokerClientFromDiscovery: async () => undefined,
+		}));
+
+		const notifyMessages: string[] = [];
+		const handlers = new Map<string, unknown>();
+
+		const api = {
+			setLabel() {},
+			on(event: string, handler: unknown) {
+				handlers.set(event, handler);
+			},
+			registerCommand() {},
+			sendUserMessage() {},
+		} as unknown as ExtensionAPI;
+
+		browserFeedbackExtension(api);
+
+		const sessionStart = handlers.get("session_start") as (
+			...args: unknown[]
+		) => Promise<void>;
+		const ctx = {
+			cwd: "/tmp",
+			ui: {
+				notify(msg: string) {
+					notifyMessages.push(msg);
+				},
+				setStatus() {},
+			},
+			sessionManager: { getSessionId: () => "s1", getSessionName: () => "S1" },
+			hasUI: true,
+		};
+		await sessionStart({}, ctx);
+
+		expect(notifyMessages.length).toBe(1);
+		expect(notifyMessages[0]).toContain("4317-4337");
+		expect(notifyMessages[0]).toContain("/bf broker");
+	});
+});
+describe("THA-217 reconnect hardening", () => {
+	test("/bf broker start instructs user to run /bf connect", async () => {
+		const notify = createNotifyHarness();
+		await handleBfCommand(
+			"broker start",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				ensureBrokerRunning: async () => ({
+					baseUrl: "http://127.0.0.1:4317",
+					authToken: "tok",
+					port: 4317,
+					reused: false,
+				}),
+			},
+		);
+		expect(notify.last()).toContain("Run `/bf connect`");
+	});
+
+	test("/bf broker start reused message also instructs /bf connect", async () => {
+		const notify = createNotifyHarness();
+		await handleBfCommand(
+			"broker start",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				ensureBrokerRunning: async () => ({
+					baseUrl: "http://127.0.0.1:4317",
+					authToken: "tok",
+					port: 4317,
+					reused: true,
+				}),
+			},
+		);
+		expect(notify.last()).toContain("already running");
+		expect(notify.last()).toContain("Run `/bf connect`");
+	});
+
+	test("/bf status shows connection state when listSessions fails", async () => {
+		const notify = createNotifyHarness();
+		await handleBfCommand(
+			"status",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				loadClient: async () =>
+					({
+						listSessions: async () => {
+							throw new Error("network timeout");
+						},
+					}) as unknown as BrowserBrokerClient,
+				getInProcessBrokerStatus: () => ({
+					running: true,
+					baseUrl: "http://127.0.0.1:4317",
+					port: 4317,
+				}),
+				getActiveConnectionStatus: () => {
+					return {
+						state: "reconnecting" as const,
+						reconnectAttempts: 3,
+						baseUrl: "http://127.0.0.1:4317",
+					};
+				},
+			},
+		);
+		const msg = notify.last();
+		expect(msg).toContain("network timeout");
+		expect(msg).toContain("reconnecting");
+		expect(msg).toContain("Reconnect attempts: 3");
+	});
+
+	test("/bf connect calls clearActiveFeedbackSubscription before creating new subscription", async () => {
+		const notify = createNotifyHarness();
+		const closedCalls: string[] = [];
+		let subCreated = false;
+
+		await handleBfCommand(
+			"connect",
+			makeCommandContext(notify.notify),
+			async () => {},
+			{
+				ensureBrokerRunning: async () => ({
+					baseUrl: "http://127.0.0.1:4317",
+					authToken: "tok",
+					port: 4317,
+					reused: false,
+				}),
+				createClient: () =>
+					({
+						registerSession: async () => {},
+						subscribeFeedback: () => {
+							subCreated = true;
+							return {
+								close() {
+									closedCalls.push("new-sub-closed");
+								},
+								getStatus() {
+									return {
+										state: "connecting" as const,
+										reconnectAttempts: 0,
+										baseUrl: "http://127.0.0.1:4317",
+									};
+								},
+							};
+						},
+					}) as unknown as BrowserBrokerClient,
+				setActiveFeedbackSubscription: (_sub) => {
+					if (subCreated) {
+						closedCalls.push("set-after-create");
+					}
+				},
+			},
+		);
+		expect(notify.last()).toContain("Broker:");
+	});
+});
+
+describe.skipIf(!hasPil)("downscaleImage", () => {
+	async function makePng(width: number, height: number): Promise<Uint8Array> {
+		const tmpFile = `/tmp/omp-test-${width}x${height}.png`;
+		execSync(
+			`python3 -c "from PIL import Image; Image.new('RGB', (${width}, ${height}), 'red').save('${tmpFile}')"`,
+		);
+		return Bun.file(tmpFile).bytes();
+	}
+
+	test("downscales images above the max dimension threshold", async () => {
+		const input = await makePng(2000, 1500);
+		const result = await downscaleImage(input, "image/png");
+		const outImg = new Bun.Image(result);
+		const meta = await outImg.metadata();
+		expect(meta.width).toBe(1568);
+		expect(meta.height).toBe(1176);
+	});
+
+	test("preserves aspect ratio during downscale", async () => {
+		const input = await makePng(1000, 3000);
+		const result = await downscaleImage(input, "image/png");
+		const outImg = new Bun.Image(result);
+		const meta = await outImg.metadata();
+		expect(meta.width).toBe(523);
+		expect(meta.height).toBe(1568);
+	});
+
+	test("returns original bytes when image is below threshold", async () => {
+		const input = await makePng(800, 600);
+		const result = await downscaleImage(input, "image/png");
+		expect(result).toBe(input);
 	});
 });
