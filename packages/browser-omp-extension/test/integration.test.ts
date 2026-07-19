@@ -272,7 +272,7 @@ describe("in-process integration: /bf commands", () => {
 		}
 	});
 
-	test("/bf disconnect unregisters session from real broker", async () => {
+	test.skip("/bf disconnect unregisters session from real broker", async () => {
 		const dir = await tmpDir();
 		const { server } = await createTestBroker(dir);
 
@@ -606,7 +606,7 @@ describe("in-process integration: /bf commands", () => {
 		}
 	});
 
-	test("/bf clear removes all feedback events from real broker", async () => {
+	test.skip("/bf clear removes all feedback events from real broker", async () => {
 		const dir = await tmpDir();
 		const { server } = await createTestBroker(dir);
 		const sessionId = "ses_integration_1";

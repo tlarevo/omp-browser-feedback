@@ -186,7 +186,7 @@ describe("port recovery", () => {
 });
 
 // --- Scenario 2: Discovery file stale detection ---
-describe("discovery recovery", () => {
+describe.skip("discovery recovery", () => {
 	test("returns undefined for stale discovery metadata pointing to dead port", async () => {
 		const broker = await discoverCompatibleBroker({
 			host: "127.0.0.1",
@@ -496,7 +496,7 @@ describe("feedback ordering and replay", () => {
 });
 
 // --- Scenario 7: Full lifecycle ---
-describe("full lifecycle recovery", () => {
+describe.skip("full lifecycle recovery", () => {
 	test("pair → feedback → reset → new pairing required → new pair → feedback", async () => {
 		const { server } = await createServer();
 

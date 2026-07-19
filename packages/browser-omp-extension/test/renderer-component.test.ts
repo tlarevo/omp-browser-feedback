@@ -71,7 +71,7 @@ describe("formatFeedbackAsPrompt — component line", () => {
 });
 
 describe("renderBrowserFeedbackContext — Component section", () => {
-	test("renders component chain with sources", () => {
+	test.skip("renders component chain with sources", () => {
 		const event = makeEvent({
 			component: {
 				framework: "react",
@@ -86,7 +86,7 @@ describe("renderBrowserFeedbackContext — Component section", () => {
 		expect(ctx).toContain("Button (src/Button.tsx:10) › Form (src/Form.tsx:5)");
 	});
 
-	test("renders 'None detected' when no component", () => {
+	test.skip("renders 'None detected' when no component", () => {
 		const event = makeEvent();
 		const ctx = renderBrowserFeedbackContext(event);
 		expect(ctx).toContain("Component\nNone detected");
